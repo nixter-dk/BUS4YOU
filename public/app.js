@@ -111,3 +111,22 @@ renderTab = function () {
     });
   }
 };
+
+renderDrivers = function () {
+  activate('drivers'); setTitle('Chauffører');
+  $('#view').innerHTML=`<div class="grid2"><section class="panel"><div class="panel-head"><h2>Chauffører i systemet</h2><small>${state.drivers.length} chauffører</small></div>${state.drivers.length?state.drivers.map(driver=>`<div class="stop-card"><div class="driver-profile"><span class="avatar">${esc(driver.name.split(' ').map(x=>x[0]).slice(0,2).join(''))}</span><div><strong>${esc(driver.name)}</strong><div class="muted">${esc(driver.email)}</div></div></div><div class="stop-actions"><button class="mini" data-edit-driver="${driver.id}">Rediger</button><button class="mini danger" data-delete-driver="${driver.id}">Slet</button></div></div>`).join(''):'<div class="empty">Ingen chauffører er oprettet</div>'}</section><section class="panel"><div class="panel-head"><h2>Tilføj chauffør</h2></div><form class="form" id="driverForm" style="padding:22px;display:grid"><label>Fulde navn<input name="name" required placeholder="Chaufførens navn"></label><label>E-mail<input name="email" type="email" required placeholder="navn@albaturist.dk"></label><label>Midlertidig adgangskode<input name="password" type="password" minlength="8" required autocomplete="new-password"><small>Mindst 8 tegn</small></label><button class="primary">Opret chauffør</button></form></section></div>`;
+  $('#driverForm').onsubmit=async event=>{event.preventDefault();try{const driver=await api('/api/drivers',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(event.target)))});state.drivers.push(driver);toast('Chaufføren er oprettet');renderDrivers()}catch(error){toast(error.message)}};
+  $$('[data-edit-driver]').forEach(button=>button.onclick=()=>openDriverEditor(Number(button.dataset.editDriver)));
+  $$('[data-delete-driver]').forEach(button=>button.onclick=async()=>{
+    const driver=state.drivers.find(d=>d.id===Number(button.dataset.deleteDriver));
+    if(!confirm(`Vil du slette chaufføren ${driver.name}?`))return;
+    try{await api(`/api/drivers/${driver.id}`,{method:'DELETE'});state.drivers=state.drivers.filter(d=>d.id!==driver.id);toast('Chaufføren er slettet');renderDrivers()}catch(error){toast(error.message)}
+  });
+};
+
+function openDriverEditor(id) {
+  const driver=state.drivers.find(d=>d.id===id);
+  $('#modalBody').innerHTML=`<h2>Rediger chauffør</h2><p class="muted">Opdater kontaktoplysninger eller angiv en ny adgangskode.</p><form class="form" id="editDriverForm"><label class="wide">Fulde navn<input name="name" value="${esc(driver.name)}" required></label><label class="wide">E-mail<input name="email" type="email" value="${esc(driver.email)}" required></label><label class="wide">Ny adgangskode<input name="password" type="password" minlength="8" autocomplete="new-password" placeholder="Lad feltet være tomt for at beholde den nuværende"><small>Valgfrit · mindst 8 tegn</small></label><button class="primary wide">Gem ændringer</button></form>`;
+  $('#editDriverForm').onsubmit=async event=>{event.preventDefault();try{const updated=await api(`/api/drivers/${driver.id}`,{method:'PATCH',body:JSON.stringify(Object.fromEntries(new FormData(event.target)))});Object.assign(driver,updated);state.trips.forEach(t=>{if(t.primaryDriverId===driver.id)t.primaryDriver=driver.name;if(t.secondaryDriverId===driver.id)t.secondaryDriver=driver.name});$('#modal').close();toast('Chaufføren er opdateret');renderDrivers()}catch(error){toast(error.message)}};
+  $('#modal').showModal();
+}

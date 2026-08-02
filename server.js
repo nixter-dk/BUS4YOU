@@ -123,6 +123,29 @@ async function api(req, res, pathname) {
     const driver = { id: id(), name, email, role: 'driver', salt: credentials.salt, passwordHash: credentials.hash };
     db.users.push(driver); saveDb(); return json(res, 201, cleanUser(driver));
   }
+  const driverMatch = pathname.match(/^\/api\/drivers\/(\d+)$/);
+  if (driverMatch) {
+    if (user.role !== 'admin') return fail(res, 403, 'Kun administratoren kan ændre chauffører');
+    const driver = db.users.find(u => u.id === Number(driverMatch[1]) && u.role === 'driver');
+    if (!driver) return fail(res, 404, 'Chaufføren findes ikke');
+    if (req.method === 'PATCH') {
+      const data = await body(req); const name = String(data.name || '').trim(); const email = String(data.email || '').trim().toLowerCase();
+      if (!name || !email || !email.includes('@')) return fail(res, 400, 'Udfyld chaufførens navn og en gyldig e-mail');
+      if (db.users.some(u => u.id !== driver.id && u.email.toLowerCase() === email)) return fail(res, 409, 'E-mailadressen bruges allerede');
+      driver.name = name; driver.email = email;
+      if (data.password) {
+        if (String(data.password).length < 8) return fail(res, 400, 'Den nye adgangskode skal være på mindst 8 tegn');
+        const credentials = hashPassword(String(data.password)); driver.salt = credentials.salt; driver.passwordHash = credentials.hash;
+      }
+      saveDb(); return json(res, 200, cleanUser(driver));
+    }
+    if (req.method === 'DELETE') {
+      const assigned = db.trips.some(t => t.primaryDriverId === driver.id || t.secondaryDriverId === driver.id);
+      if (assigned) return fail(res, 409, 'Chaufføren er tildelt en tur og kan derfor ikke slettes');
+      db.users = db.users.filter(u => u.id !== driver.id); saveDb(); return json(res, 200, { ok: true });
+    }
+    return fail(res, 405, 'Handlingen er ikke tilladt');
+  }
   const stopMatch = pathname.match(/^\/api\/stops\/(\d+)$/);
   if (stopMatch) {
     if (user.role !== 'admin') return fail(res, 403, 'Kun administratoren kan ændre opsamlingssteder');
