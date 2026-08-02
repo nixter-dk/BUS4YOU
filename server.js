@@ -115,6 +115,17 @@ async function api(req, res, pathname) {
     const data = await body(req); if (!data.name?.trim()) return fail(res, 400, 'Navn mangler');
     const stop = { id: id(), name: data.name.trim(), address: String(data.address || '').trim() }; db.stops.push(stop); saveDb(); return json(res, 201, stop);
   }
+  if (pathname === '/api/drivers' && req.method === 'POST') {
+    if (user.role !== 'admin') return fail(res, 403, 'Kun administratoren kan oprette chauffører');
+    const data = await body(req);
+    const name = String(data.name || '').trim(); const email = String(data.email || '').trim().toLowerCase(); const password = String(data.password || '');
+    if (!name || !email || !email.includes('@')) return fail(res, 400, 'Udfyld chaufførens navn og en gyldig e-mail');
+    if (password.length < 8) return fail(res, 400, 'Adgangskoden skal være på mindst 8 tegn');
+    if (db.users.some(u => u.email.toLowerCase() === email)) return fail(res, 409, 'E-mailadressen bruges allerede');
+    const credentials = hashPassword(password);
+    const driver = { id: id(), name, email, role: 'driver', salt: credentials.salt, passwordHash: credentials.hash };
+    db.users.push(driver); saveDb(); return json(res, 201, cleanUser(driver));
+  }
   const stopMatch = pathname.match(/^\/api\/stops\/(\d+)$/);
   if (stopMatch) {
     if (user.role !== 'admin') return fail(res, 403, 'Kun administratoren kan ændre opsamlingssteder');

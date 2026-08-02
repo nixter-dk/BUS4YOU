@@ -45,5 +45,6 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 - En chauffør kan kun læse en tur, når brugerens ID er `primaryDriverId` eller `secondaryDriverId`.
 - Kun administratoren kan oprette ture, steder, passagerer og bagage.
 - Kun administratoren kan redigere/slette opsamlingssteder og ændre bussens sædekapacitet.
+- Kun administratoren kan oprette chaufførkonti; chauffører oprettes separat, før de kan tildeles en tur.
 - En tildelt chauffør kan udføre check-in og ændre bagagestatus.
 - Reglerne håndhæves på serveren og er ikke kun skjult i brugerfladen.
