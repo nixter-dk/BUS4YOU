@@ -194,3 +194,18 @@ seatGrid = function (selectable=true) {
   return`${deckHtml}<div class="legend"><span><i class="dot"></i>Ledigt</span><span><i class="dot front"></i>Front +100 kr.</span><span><i class="dot table"></i>Bord +75 kr.</span></div>`;
 };
 function seatButton(seat,selectable){return`<button type="button" class="seat ${seat.type} ${seat.passengerId?'taken':''} ${state.selectedSeat===seat.number?'selected':''}" ${seat.passengerId||!selectable?'disabled':''} data-seat="${seat.number}" title="Sæde ${seat.number} · +${seat.surcharge} kr.">${seat.number}</button>`}
+
+// Orienteringskort: overetagen ligger visuelt over underetagen, begge med 2+2-sæder.
+seatGrid = function (selectable=true) {
+  const seats=state.trip.seats; const isDouble=state.trip.trip.bus?.type==='double';
+  const decks=isDouble?[['upper','Overetage'],['lower','Underetage']]:[['lower','Sædeoversigt']];
+  const overview=isDouble?`<div class="deck-orientation"><div class="orientation-bus"><span class="orientation-front">Bussens front</span><div><b>↑ Overetage</b><small>${seats.filter(s=>s.deck==='upper').length} sæder</small></div><i>Trappe</i><div><b>↓ Underetage</b><small>${seats.filter(s=>s.deck==='lower').length} sæder</small></div><span class="orientation-rear">Bagende</span></div><p>Etagerne vises i samme kørselsretning. Venstre og højre sædepar ligger på hver side af midtergangen.</p></div>`:'';
+  const deckHtml=decks.map(([deck,label])=>renderDeckMap(deck,label,seats.filter(seat=>seat.deck===deck),selectable,isDouble)).join('');
+  return`${overview}<div class="stacked-decks">${deckHtml}</div><div class="legend"><span><i class="dot"></i>Ledigt</span><span><i class="dot front"></i>Front +100 kr.</span><span><i class="dot table"></i>Bord +75 kr.</span><span><i class="dot occupied"></i>Optaget</span></div>`;
+};
+
+function renderDeckMap(deck,label,seats,selectable,isDouble) {
+  let rows='';
+  for(let i=0;i<seats.length;i+=4){const row=seats.slice(i,i+4);rows+=`<div class="seat-row"><div class="seat-pair">${row.slice(0,2).map(seat=>seatButton(seat,selectable)).join('')}</div><span class="aisle"><i>↕</i></span><div class="seat-pair">${row.slice(2,4).map(seat=>seatButton(seat,selectable)).join('')}</div></div>`}
+  return`<section class="bus-deck orientation-deck ${deck}"><div class="deck-title"><span>${deck==='upper'?'↑':'↓'}</span><strong>${label}</strong><small>${seats.length} sæder</small></div><div class="bus-outline"><div class="driver-marker">${deck==='lower'?'Rat':'Front'}</div>${isDouble&&deck==='lower'?'<div class="stairs-marker">Trappe</div>':''}<div class="oriented-seat-grid">${rows}</div><div class="rear-marker">Bagende</div></div></section>`;
+}

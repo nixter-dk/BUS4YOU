@@ -38,6 +38,7 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Administratorkontrolleret buskapacitet: op til 54 sæder i almindelig bus og op til 84 i dobbeltdækker
 - Separat busregister med navn, registreringsnummer, bustype og kapacitet
 - Turen tildeles en konkret bus; dobbeltdækkere vises med under- og overetage
+- Orienteringskort med overetage øverst, underetage direkte nedenunder, 2+2-sæder, midtergang, front, bagende og trappe
 - Frontsæder (+100 kr.) og bordpladser (+75 kr.)
 - Check-in fra passagerlisten
 - Administrator og tildelte chauffører kan registrere ubetalte billetter og bagage som betalt i bus eller salgsbutik; betalingen kan ikke føres tilbage til ubetalt
