@@ -17,9 +17,15 @@ Den lokale MVP gemmer nedenstående relationelle struktur som JSON. ID-reference
 ### trips
 
 - `id`, `title`, `departureAt`, `status`
-- `originId`, `destinationId`
+- `originId`, `destinationId`, `busId`
 - `basePrice`, `seatCount` (1–84, kun administratoren kan ændre værdien)
 - `primaryDriverId`, `secondaryDriverId`
+
+### buses
+
+- `id`, `name`, `registration`
+- `type`: `standard` eller `double`
+- `seatCount`, `lowerDeckSeats`
 
 ### passengers
 
@@ -45,6 +51,7 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 - En chauffør kan kun læse en tur, når brugerens ID er `primaryDriverId` eller `secondaryDriverId`.
 - Kun administratoren kan oprette ture, steder, passagerer og bagage.
 - Kun administratoren kan redigere/slette opsamlingssteder og ændre bussens sædekapacitet.
+- Kun administratoren kan oprette, redigere og slette busser. En bus, der er tildelt en tur, kan ikke slettes.
 - Kun administratoren kan oprette, redigere og slette chaufførkonti; chauffører oprettes separat, før de kan tildeles en tur. Tildelte chauffører kan ikke slettes.
 - Kun administratoren kan se den samlede salgs- og økonomirapport. DKK og EUR summeres separat uden automatisk valutaomregning.
 - En tildelt chauffør kan udføre check-in og ændre bagagestatus.

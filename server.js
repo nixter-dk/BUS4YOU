@@ -23,13 +23,13 @@ function seed() {
   const tomorrow = new Date(Date.now() + 86400000);
   tomorrow.setHours(8, 0, 0, 0);
   return {
-    meta: { version: 3, nextId: 20 },
+    meta: { version: 4, nextId: 20 },
     users: [
       { id: 1, name: 'Administrator', email: 'admin@albaturist.dk', role: 'admin', salt: admin.salt, passwordHash: admin.hash },
       { id: 2, name: 'Mads Chauffør', email: 'mads@albaturist.dk', role: 'driver', salt: driver1.salt, passwordHash: driver1.hash },
       { id: 3, name: 'Sara Chauffør', email: 'sara@albaturist.dk', role: 'driver', salt: driver2.salt, passwordHash: driver2.hash }
     ],
-    stops: [],
+    stops: [], buses: [],
     trips: [],
     passengers: [], baggage: []
   };
@@ -50,6 +50,7 @@ if ((db.meta?.version || 1) < 3) {
   db.stops = []; db.trips = []; db.passengers = []; db.baggage = [];
   db.meta.version = 3; migrated = true;
 }
+if ((db.meta?.version || 1) < 4) { db.buses = db.buses || []; db.meta.version = 4; migrated = true; }
 for (const trip of db.trips) {
   if (!trip.seatCount) { trip.seatCount = 54; migrated = true; }
 }
@@ -76,6 +77,7 @@ function tripView(t) {
   const baggage = db.baggage.filter(b => b.tripId === t.id);
   return { ...t,
     origin: db.stops.find(s => s.id === t.originId), destination: db.stops.find(s => s.id === t.destinationId),
+    bus: db.buses.find(b => b.id === t.busId) || null,
     primaryDriver: db.users.find(u => u.id === t.primaryDriverId)?.name || null,
     secondaryDriver: db.users.find(u => u.id === t.secondaryDriverId)?.name || null,
     counts: { passengers: passengers.length, checkedIn: passengers.filter(p => p.checkedIn).length, baggage: baggage.length, onboard: baggage.filter(b => b.status === 'onboard').length }
@@ -88,7 +90,9 @@ function seatMap(tripId) {
     const number = index + 1;
     const isFront = number <= 4;
     const isTable = [13,14,17,18,21,22,25,26].includes(number);
-    return { number, type: isFront ? 'front' : isTable ? 'table' : 'standard', surcharge: isFront ? 100 : isTable ? 75 : 0, passengerId: taken.get(number) || null };
+    const assignedBus = trip?.busId ? db.buses.find(b => b.id === trip.busId) : null;
+    const lowerDeckSeats = assignedBus?.type === 'double' ? Math.min(assignedBus.lowerDeckSeats || 20, trip.seatCount) : trip?.seatCount;
+    return { number, deck: number <= lowerDeckSeats ? 'lower' : 'upper', type: isFront ? 'front' : isTable ? 'table' : 'standard', surcharge: isFront ? 100 : isTable ? 75 : 0, passengerId: taken.get(number) || null };
   });
 }
 async function api(req, res, pathname) {
@@ -105,7 +109,38 @@ async function api(req, res, pathname) {
   if (pathname === '/api/me') return json(res, 200, { user: cleanUser(user) });
   if (pathname === '/api/bootstrap') {
     const trips = db.trips.filter(t => allowedTrip(user, t)).map(tripView);
-    return json(res, 200, { user: cleanUser(user), trips, stops: db.stops, drivers: user.role === 'admin' ? db.users.filter(u => u.role === 'driver').map(cleanUser) : [] });
+    return json(res, 200, { user: cleanUser(user), trips, stops: db.stops, drivers: user.role === 'admin' ? db.users.filter(u => u.role === 'driver').map(cleanUser) : [], buses: user.role === 'admin' ? db.buses : [] });
+  }
+  if (pathname === '/api/buses' && req.method === 'POST') {
+    if (user.role !== 'admin') return fail(res, 403, 'Kun administratoren kan oprette busser');
+    const data = await body(req); const name = String(data.name || '').trim(); const registration = String(data.registration || '').trim().toUpperCase(); const type = data.type === 'double' ? 'double' : 'standard'; const seatCount = Number(data.seatCount);
+    if (!name || !registration) return fail(res, 400, 'Udfyld bussens navn og registreringsnummer');
+    if (!Number.isInteger(seatCount) || seatCount < 1 || seatCount > (type === 'double' ? 84 : 54)) return fail(res, 400, type === 'double' ? 'En dobbeltdækker kan have op til 84 sæder' : 'En almindelig bus kan have op til 54 sæder');
+    if (db.buses.some(b => b.registration === registration)) return fail(res, 409, 'Registreringsnummeret findes allerede');
+    const lowerDeckSeats = type === 'double' ? Number(data.lowerDeckSeats || 20) : seatCount;
+    if (type === 'double' && (!Number.isInteger(lowerDeckSeats) || lowerDeckSeats < 1 || lowerDeckSeats >= seatCount)) return fail(res, 400, 'Angiv et gyldigt antal sæder på underetagen');
+    const bus = { id: id(), name, registration, type, seatCount, lowerDeckSeats }; db.buses.push(bus); saveDb(); return json(res, 201, bus);
+  }
+  const busMatch = pathname.match(/^\/api\/buses\/(\d+)$/);
+  if (busMatch) {
+    if (user.role !== 'admin') return fail(res, 403, 'Kun administratoren kan ændre busser');
+    const bus = db.buses.find(b => b.id === Number(busMatch[1])); if (!bus) return fail(res, 404, 'Bussen findes ikke');
+    if (req.method === 'PATCH') {
+      const data = await body(req); const name = String(data.name || '').trim(); const registration = String(data.registration || '').trim().toUpperCase(); const type = data.type === 'double' ? 'double' : 'standard'; const seatCount = Number(data.seatCount);
+      if (!name || !registration) return fail(res, 400, 'Udfyld bussens navn og registreringsnummer');
+      if (!Number.isInteger(seatCount) || seatCount < 1 || seatCount > (type === 'double' ? 84 : 54)) return fail(res, 400, type === 'double' ? 'En dobbeltdækker kan have op til 84 sæder' : 'En almindelig bus kan have op til 54 sæder');
+      if (db.buses.some(b => b.id !== bus.id && b.registration === registration)) return fail(res, 409, 'Registreringsnummeret findes allerede');
+      const lowerDeckSeats = type === 'double' ? Number(data.lowerDeckSeats || 20) : seatCount;
+      if (type === 'double' && (!Number.isInteger(lowerDeckSeats) || lowerDeckSeats < 1 || lowerDeckSeats >= seatCount)) return fail(res, 400, 'Angiv et gyldigt antal sæder på underetagen');
+      const highestBooked = Math.max(0,...db.trips.filter(t => t.busId === bus.id).flatMap(t => db.passengers.filter(p => p.tripId === t.id).map(p => p.seatNumber)));
+      if (seatCount < highestBooked) return fail(res, 409, `Der er allerede booket sæde ${highestBooked} på denne bus`);
+      Object.assign(bus,{ name,registration,type,seatCount,lowerDeckSeats }); db.trips.filter(t => t.busId === bus.id).forEach(t => t.seatCount = seatCount); saveDb(); return json(res, 200, bus);
+    }
+    if (req.method === 'DELETE') {
+      if (db.trips.some(t => t.busId === bus.id)) return fail(res, 409, 'Bussen er tildelt en tur og kan derfor ikke slettes');
+      db.buses = db.buses.filter(b => b.id !== bus.id); saveDb(); return json(res, 200, { ok: true });
+    }
+    return fail(res, 405, 'Handlingen er ikke tilladt');
   }
   if (pathname === '/api/reports' && req.method === 'GET') {
     if (user.role !== 'admin') return fail(res, 403, 'Kun administratoren kan se salg og økonomi');
@@ -178,10 +213,10 @@ async function api(req, res, pathname) {
   }
   if (pathname === '/api/trips' && req.method === 'POST') {
     if (user.role !== 'admin') return fail(res, 403, 'Kun administratoren kan oprette ture');
-    const data = await body(req); if (!data.title || !data.departureAt || !data.originId || !data.destinationId || !data.primaryDriverId) return fail(res, 400, 'Udfyld turens obligatoriske felter');
+    const data = await body(req); if (!data.title || !data.departureAt || !data.originId || !data.destinationId || !data.primaryDriverId || !data.busId) return fail(res, 400, 'Udfyld turens obligatoriske felter');
     if (Number(data.primaryDriverId) === Number(data.secondaryDriverId)) return fail(res, 400, 'De to chauffører skal være forskellige');
-    const seatCount = Number(data.seatCount || 54); if (!Number.isInteger(seatCount) || seatCount < 1 || seatCount > 84) return fail(res, 400, 'Antal sæder skal være mellem 1 og 84');
-    const trip = { id: id(), title: data.title.trim(), departureAt: new Date(data.departureAt).toISOString(), originId: Number(data.originId), destinationId: Number(data.destinationId), basePrice: Number(data.basePrice || 0), seatCount, primaryDriverId: Number(data.primaryDriverId), secondaryDriverId: data.secondaryDriverId ? Number(data.secondaryDriverId) : null, status: 'planned' };
+    const bus = db.buses.find(b => b.id === Number(data.busId)); if (!bus) return fail(res, 400, 'Vælg en gyldig bus');
+    const trip = { id: id(), title: data.title.trim(), departureAt: new Date(data.departureAt).toISOString(), originId: Number(data.originId), destinationId: Number(data.destinationId), basePrice: Number(data.basePrice || 0), busId: bus.id, seatCount: bus.seatCount, primaryDriverId: Number(data.primaryDriverId), secondaryDriverId: data.secondaryDriverId ? Number(data.secondaryDriverId) : null, status: 'planned' };
     db.trips.push(trip); saveDb(); return json(res, 201, tripView(trip));
   }
   const match = pathname.match(/^\/api\/trips\/(\d+)(?:\/(passengers|baggage|seats))?$/);
