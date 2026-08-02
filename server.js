@@ -107,6 +107,20 @@ async function api(req, res, pathname) {
     const trips = db.trips.filter(t => allowedTrip(user, t)).map(tripView);
     return json(res, 200, { user: cleanUser(user), trips, stops: db.stops, drivers: user.role === 'admin' ? db.users.filter(u => u.role === 'driver').map(cleanUser) : [] });
   }
+  if (pathname === '/api/reports' && req.method === 'GET') {
+    if (user.role !== 'admin') return fail(res, 403, 'Kun administratoren kan se salg og økonomi');
+    const sumByCurrency = records => ['DKK','EUR'].reduce((result,currency) => {
+      result[currency] = records.filter(record => record.paymentStatus === 'cash' && (record.paymentCurrency || 'DKK') === currency).reduce((sum,record) => sum + Number(record.cashAmount || 0),0); return result;
+    },{});
+    const addTrip = record => { const trip = db.trips.find(t => t.id === record.tripId); return { ...record, tripTitle: trip?.title || 'Ukendt tur', departureAt: trip?.departureAt || null }; };
+    return json(res, 200, {
+      summary: {
+        tickets: db.passengers.length, paidTickets: db.passengers.filter(p => p.paymentStatus === 'cash').length, unpaidTickets: db.passengers.filter(p => p.paymentStatus !== 'cash').length,
+        ticketRevenue: sumByCurrency(db.passengers), baggage: db.baggage.length, paidBaggage: db.baggage.filter(b => b.paymentStatus === 'cash').length, unpaidBaggage: db.baggage.filter(b => b.paymentStatus !== 'cash').length, baggageRevenue: sumByCurrency(db.baggage)
+      },
+      tickets: db.passengers.map(addTrip), baggage: db.baggage.map(addTrip)
+    });
+  }
   if (pathname === '/api/stops' && req.method === 'POST') {
     if (user.role !== 'admin') return fail(res, 403, 'Kun administratoren kan oprette opsamlingssteder');
     const data = await body(req); if (!data.name?.trim()) return fail(res, 400, 'Navn mangler');

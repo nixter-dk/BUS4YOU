@@ -46,5 +46,6 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 - Kun administratoren kan oprette ture, steder, passagerer og bagage.
 - Kun administratoren kan redigere/slette opsamlingssteder og ændre bussens sædekapacitet.
 - Kun administratoren kan oprette, redigere og slette chaufførkonti; chauffører oprettes separat, før de kan tildeles en tur. Tildelte chauffører kan ikke slettes.
+- Kun administratoren kan se den samlede salgs- og økonomirapport. DKK og EUR summeres separat uden automatisk valutaomregning.
 - En tildelt chauffør kan udføre check-in og ændre bagagestatus.
 - Reglerne håndhæves på serveren og er ikke kun skjult i brugerfladen.
