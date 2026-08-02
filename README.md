@@ -27,11 +27,12 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Login med sikre, saltede `scrypt`-password-hashes og HTTP-only sessionscookies
 - Roller: administrator og chauffør
 - Kalender og turdashboard
-- Opsamlingssteder
+- Opsamlingssteder, som kun administratoren kan oprette, redigere og slette
 - To chauffører pr. tur, hvor én er primær
 - Chauffører kan kun åbne ture, de selv er tildelt
 - Passagerregistrering, betalingsstatus og kontant beløb
-- Visuel sædeplan med unik reservation pr. tur
+- Visuel sædeplan med grøn markering af ledige sæder og unik reservation pr. tur
+- Administratorkontrolleret buskapacitet: op til 54 sæder i almindelig bus og op til 84 i dobbeltdækker
 - Frontsæder (+100 kr.) og bordpladser (+75 kr.)
 - Check-in fra passagerlisten
 - Separat liste over sendt bagage

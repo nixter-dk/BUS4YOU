@@ -32,3 +32,51 @@ function wireBaggageForm(){const form=$('#baggageForm');form.onsubmit=async e=>{
 async function toggleCheck(id){const p=state.trip.passengers.find(x=>x.id===id);try{const updated=await api(`/api/trips/${state.trip.trip.id}/passengers`,{method:'PATCH',body:JSON.stringify({id,checkedIn:!p.checkedIn})});Object.assign(p,updated);renderTrip()}catch(e){toast(e.message)}}
 async function bagStatus(id,status){try{const b=await api(`/api/trips/${state.trip.trip.id}/baggage`,{method:'PATCH',body:JSON.stringify({id,status})});Object.assign(state.trip.baggage.find(x=>x.id===id),b);toast('Status er opdateret')}catch(e){toast(e.message)}}
 bootstrap().catch(()=>{});
+
+// Administratorfunktioner til buskapacitet og vedligeholdelse af opsamlingssteder.
+const originalNewTrip = $('#newTrip').onclick;
+$('#newTrip').onclick = () => {
+  originalNewTrip();
+  const form = $('#createTrip');
+  form.basePrice.closest('label').insertAdjacentHTML('afterend','<label>Antal sæder<input name="seatCount" type="number" min="1" max="84" value="54" required><small>Almindelig bus: op til 54 · Dobbeltdækker: op til 84</small></label>');
+};
+
+const originalRenderTrip = renderTrip;
+renderTrip = function () {
+  originalRenderTrip();
+  const { trip, passengers } = state.trip;
+  const statValues = $$('.stat strong');
+  if (statValues[2]) statValues[2].textContent = trip.seatCount - passengers.length;
+  const seatHeading = state.tab === 'seats' ? $('.panel-head small') : null;
+  if (seatHeading) seatHeading.textContent = `${trip.seatCount} sæder`;
+  if (state.user.role === 'admin') {
+    $('.detail-hero').insertAdjacentHTML('beforeend',`<form id="capacityForm" class="capacity-form"><label>Antal sæder<input name="seatCount" type="number" min="1" max="84" value="${trip.seatCount}" required></label><button>Gem kapacitet</button><small>Maks. 84 sæder</small></form>`);
+    $('#capacityForm').onsubmit = async e => {
+      e.preventDefault();
+      try {
+        const updated = await api(`/api/trips/${trip.id}`,{method:'PATCH',body:JSON.stringify({seatCount:Number(e.target.seatCount.value)})});
+        state.trip.trip = updated;
+        state.trip.seats = await api(`/api/trips/${trip.id}/seats`);
+        const overview = state.trips.find(t => t.id === trip.id); if (overview) Object.assign(overview,updated);
+        toast('Antal sæder er opdateret'); renderTrip();
+      } catch (error) { toast(error.message); }
+    };
+  }
+};
+
+renderStops = function () {
+  activate('stops'); setTitle('Opsamlingssteder');
+  $('#view').innerHTML=`<div class="grid2"><section class="panel"><div class="panel-head"><h2>Alle steder</h2><small>${state.stops.length} steder</small></div>${state.stops.map(s=>`<div class="stop-card"><div><strong>${esc(s.name)}</strong><div class="muted">${esc(s.address)}</div></div><div class="stop-actions"><button class="mini" data-edit-stop="${s.id}">Rediger</button><button class="mini danger" data-delete-stop="${s.id}">Slet</button></div></div>`).join('')}</section><section class="panel"><div class="panel-head"><h2>Tilføj sted</h2></div><form class="form" id="stopForm" style="padding:22px;display:grid"><label>Navn<input name="name" required placeholder="Fx Kolding"></label><label>Adresse<input name="address" placeholder="Adresse eller holdeplads"></label><button class="primary">Tilføj</button></form></section></div>`;
+  $('#stopForm').onsubmit=async e=>{e.preventDefault();try{const s=await api('/api/stops',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});state.stops.push(s);toast('Stedet er oprettet');renderStops()}catch(error){toast(error.message)}};
+  $$('[data-edit-stop]').forEach(button=>button.onclick=async()=>{
+    const stop=state.stops.find(s=>s.id===Number(button.dataset.editStop));
+    const name=prompt('Navn på opsamlingssted',stop.name); if(name===null)return;
+    const address=prompt('Adresse',stop.address); if(address===null)return;
+    try{const updated=await api(`/api/stops/${stop.id}`,{method:'PATCH',body:JSON.stringify({name,address})});Object.assign(stop,updated);toast('Stedet er opdateret');renderStops()}catch(error){toast(error.message)}
+  });
+  $$('[data-delete-stop]').forEach(button=>button.onclick=async()=>{
+    const stop=state.stops.find(s=>s.id===Number(button.dataset.deleteStop));
+    if(!confirm(`Vil du slette ${stop.name}?`))return;
+    try{await api(`/api/stops/${stop.id}`,{method:'DELETE'});state.stops=state.stops.filter(s=>s.id!==stop.id);toast('Stedet er slettet');renderStops()}catch(error){toast(error.message)}
+  });
+};
