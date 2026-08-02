@@ -38,6 +38,7 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Administratorkontrolleret buskapacitet: op til 54 sæder i almindelig bus og op til 84 i dobbeltdækker
 - Frontsæder (+100 kr.) og bordpladser (+75 kr.)
 - Check-in fra passagerlisten
+- Administrator og tildelte chauffører kan registrere ubetalte billetter og bagage som betalt i bus eller salgsbutik; betalingen kan ikke føres tilbage til ubetalt
 - Separat liste over sendt bagage
 - Bagageflow: registreret, modtaget, ombord, udleveret og ikke afhentet
 - Vedvarende lokal database med atomisk lagring

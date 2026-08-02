@@ -140,3 +140,30 @@ async function renderReports() {
     $('#view').innerHTML=`<div class="finance-grid"><div class="stat finance-main"><small>Solgte billetter</small><strong>${s.tickets}</strong><span>${s.paidTickets} betalt · ${s.unpaidTickets} ikke betalt</span></div><div class="stat"><small>Billetindtægt · DKK</small><strong>${money(s.ticketRevenue.DKK,'DKK')}</strong></div><div class="stat"><small>Billetindtægt · EUR</small><strong>${money(s.ticketRevenue.EUR,'EUR')}</strong></div><div class="stat finance-main"><small>Bagageforsendelser</small><strong>${s.baggage}</strong><span>${s.paidBaggage} betalt · ${s.unpaidBaggage} ikke betalt</span></div><div class="stat"><small>Bagageindtægt · DKK</small><strong>${money(s.baggageRevenue.DKK,'DKK')}</strong></div><div class="stat"><small>Bagageindtægt · EUR</small><strong>${money(s.baggageRevenue.EUR,'EUR')}</strong></div></div><section class="panel report-section"><div class="panel-head"><h2>Solgte billetter</h2><small>${report.tickets.length} registreringer</small></div>${report.tickets.length?`<div class="table-scroll"><table class="list"><thead><tr><th>Passager</th><th>Tur</th><th>Afgang</th><th>Sæde</th><th>Status</th><th>Beløb</th></tr></thead><tbody>${report.tickets.map(ticket=>`<tr><td><strong>${esc(ticket.name)}</strong><br><small>${esc(ticket.phone)}</small></td><td>${esc(ticket.tripTitle)}</td><td>${ticket.departureAt?date(ticket.departureAt):'–'}</td><td>${ticket.seatNumber}</td><td><span class="payment-status ${ticket.paymentStatus==='cash'?'paid':'unpaid'}">${ticket.paymentStatus==='cash'?'Betalt':'Ikke betalt'}</span></td><td><strong>${ticket.paymentStatus==='cash'?money(ticket.cashAmount,ticket.paymentCurrency||'DKK'):'–'}</strong></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Der er endnu ikke solgt billetter</div>'}</section><section class="panel report-section"><div class="panel-head"><h2>Bagagesalg</h2><small>${report.baggage.length} registreringer</small></div>${report.baggage.length?`<div class="table-scroll"><table class="list"><thead><tr><th>Afsender</th><th>Tur</th><th>Afgang</th><th>Kolli</th><th>Status</th><th>Beløb</th></tr></thead><tbody>${report.baggage.map(item=>`<tr><td><strong>${esc(item.senderName)}</strong><br><small>${esc(item.description)}</small></td><td>${esc(item.tripTitle)}</td><td>${item.departureAt?date(item.departureAt):'–'}</td><td>${item.pieces}</td><td><span class="payment-status ${item.paymentStatus==='cash'?'paid':'unpaid'}">${item.paymentStatus==='cash'?'Betalt':'Ikke betalt'}</span></td><td><strong>${item.paymentStatus==='cash'?money(item.cashAmount,item.paymentCurrency||'DKK'):'–'}</strong></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Der er endnu ikke registreret bagagesalg</div>'}</section><p class="report-note">Indtægter vises separat i DKK og EUR. Beløbene omregnes ikke automatisk.</p>`;
   } catch(error) { toast(error.message); renderDashboard(); }
 }
+
+const originalRenderTabWithPaymentActions = renderTab;
+renderTab = function () {
+  originalRenderTabWithPaymentActions();
+  if (state.tab === 'passengers') {
+    $$('#tabContent tbody tr').forEach((row,index) => {
+      const passenger=state.trip.passengers[index];
+      if (passenger?.paymentStatus !== 'cash' && row.cells[3]) row.cells[3].innerHTML=`<button class="mini payment-action" data-pay-passenger="${passenger.id}">Registrer betaling</button>`;
+    });
+    $$('[data-pay-passenger]').forEach(button=>button.onclick=()=>openPaymentDialog('passenger',Number(button.dataset.payPassenger)));
+  }
+  if (state.tab === 'baggage') {
+    $$('#tabContent tbody tr').forEach((row,index) => {
+      const item=state.trip.baggage[index];
+      if (item?.paymentStatus !== 'cash' && row.cells[0]) row.cells[0].insertAdjacentHTML('beforeend',`<br><button class="mini payment-action" data-pay-baggage="${item.id}">Registrer betaling</button>`);
+    });
+    $$('[data-pay-baggage]').forEach(button=>button.onclick=()=>openPaymentDialog('baggage',Number(button.dataset.payBaggage)));
+  }
+};
+
+function openPaymentDialog(kind,id) {
+  const isPassenger=kind==='passenger'; const record=(isPassenger?state.trip.passengers:state.trip.baggage).find(item=>item.id===id);
+  const title=isPassenger?`Billet · ${record.name}`:`Bagage · ${record.senderName}`;
+  $('#modalBody').innerHTML=`<div class="payment-dialog-icon">✓</div><h2>Registrer betaling</h2><p class="muted">${esc(title)} ændres permanent fra ikke betalt til betalt.</p><form class="form" id="paymentForm"><label>Beløb<input name="cashAmount" type="number" min="0.01" step="0.01" required autofocus></label><label>Valuta<select name="paymentCurrency"><option value="DKK">DKK – Danske kroner</option><option value="EUR">EUR – Euro</option></select></label><label class="wide">Betalt hvor?<select name="paymentLocation"><option value="bus">I bussen</option><option value="shop">I salgsbutikken</option></select></label><div class="payment-warning wide">Betalingen kan ikke ændres tilbage til “ikke betalt”.</div><button class="primary wide">Bekræft betaling</button></form>`;
+  $('#paymentForm').onsubmit=async event=>{event.preventDefault();const payload={id,paymentStatus:'cash',...Object.fromEntries(new FormData(event.target))};try{const updated=await api(`/api/trips/${state.trip.trip.id}/${isPassenger?'passengers':'baggage'}`,{method:'PATCH',body:JSON.stringify(payload)});Object.assign(record,updated);$('#modal').close();toast('Betalingen er registreret');renderTrip()}catch(error){toast(error.message)}};
+  $('#modal').showModal();
+}

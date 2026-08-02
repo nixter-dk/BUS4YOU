@@ -211,7 +211,14 @@ async function api(req, res, pathname) {
   }
   if (part === 'passengers' && req.method === 'PATCH') {
     const data = await body(req); const passenger = db.passengers.find(p => p.id === Number(data.id) && p.tripId === trip.id); if (!passenger) return fail(res, 404, 'Passageren findes ikke');
-    passenger.checkedIn = Boolean(data.checkedIn); passenger.checkedInAt = passenger.checkedIn ? new Date().toISOString() : null; saveDb(); return json(res, 200, passenger);
+    if (data.paymentStatus === 'cash') {
+      if (passenger.paymentStatus === 'cash') return fail(res, 409, 'Billetten er allerede registreret som betalt');
+      const amount = Number(data.cashAmount); const currency = ['DKK','EUR'].includes(data.paymentCurrency) ? data.paymentCurrency : null; const location = ['bus','shop'].includes(data.paymentLocation) ? data.paymentLocation : null;
+      if (!(amount > 0) || !currency || !location) return fail(res, 400, 'Angiv beløb, valuta og betalingssted');
+      passenger.paymentStatus = 'cash'; passenger.cashAmount = amount; passenger.paymentCurrency = currency; passenger.paymentLocation = location; passenger.paymentRecordedAt = new Date().toISOString(); passenger.paymentRecordedBy = user.id;
+    }
+    if (typeof data.checkedIn === 'boolean') { passenger.checkedIn = data.checkedIn; passenger.checkedInAt = passenger.checkedIn ? new Date().toISOString() : null; }
+    saveDb(); return json(res, 200, passenger);
   }
   if (part === 'baggage' && req.method === 'POST') {
     if (user.role !== 'admin') return fail(res, 403, 'Kun administratoren kan registrere bagage');
@@ -222,8 +229,17 @@ async function api(req, res, pathname) {
   }
   if (part === 'baggage' && req.method === 'PATCH') {
     const data = await body(req); const item = db.baggage.find(b => b.id === Number(data.id) && b.tripId === trip.id); if (!item) return fail(res, 404, 'Bagagen findes ikke');
-    if (!['registered','received','onboard','delivered','unclaimed'].includes(data.status)) return fail(res, 400, 'Ugyldig status');
-    item.status = data.status; saveDb(); return json(res, 200, item);
+    if (data.paymentStatus === 'cash') {
+      if (item.paymentStatus === 'cash') return fail(res, 409, 'Bagagen er allerede registreret som betalt');
+      const amount = Number(data.cashAmount); const currency = ['DKK','EUR'].includes(data.paymentCurrency) ? data.paymentCurrency : null; const location = ['bus','shop'].includes(data.paymentLocation) ? data.paymentLocation : null;
+      if (!(amount > 0) || !currency || !location) return fail(res, 400, 'Angiv beløb, valuta og betalingssted');
+      item.paymentStatus = 'cash'; item.cashAmount = amount; item.paymentCurrency = currency; item.paymentLocation = location; item.paymentRecordedAt = new Date().toISOString(); item.paymentRecordedBy = user.id;
+    }
+    if (data.status !== undefined) {
+      if (!['registered','received','onboard','delivered','unclaimed'].includes(data.status)) return fail(res, 400, 'Ugyldig status');
+      item.status = data.status;
+    }
+    saveDb(); return json(res, 200, item);
   }
   return fail(res, 405, 'Handlingen er ikke tilladt');
 }

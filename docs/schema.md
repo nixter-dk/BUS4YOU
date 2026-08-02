@@ -25,7 +25,7 @@ Den lokale MVP gemmer nedenstående relationelle struktur som JSON. ID-reference
 
 - `id`, `tripId`, `name`, `phone`
 - `pickupStopId`, `destinationStopId`
-- `paymentStatus`, `paymentCurrency` (`DKK` eller `EUR`), `cashAmount`
+- `paymentStatus`, `paymentCurrency` (`DKK` eller `EUR`), `cashAmount`, `paymentLocation`, `paymentRecordedAt`, `paymentRecordedBy`
 - `seatNumber`, `seatType`, `seatSurcharge`, `totalPrice`
 - `checkedIn`, `checkedInAt`
 
@@ -36,7 +36,7 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 - `id`, `tripId`, `senderName`, `phone`
 - `pickupStopId`, `destinationStopId`
 - `pieces`, `description`, `notes`
-- `paymentStatus`, `paymentCurrency` (`DKK` eller `EUR`), `cashAmount`
+- `paymentStatus`, `paymentCurrency` (`DKK` eller `EUR`), `cashAmount`, `paymentLocation`, `paymentRecordedAt`, `paymentRecordedBy`
 - `status`
 
 ## Adgangsregler
@@ -48,4 +48,5 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 - Kun administratoren kan oprette, redigere og slette chaufførkonti; chauffører oprettes separat, før de kan tildeles en tur. Tildelte chauffører kan ikke slettes.
 - Kun administratoren kan se den samlede salgs- og økonomirapport. DKK og EUR summeres separat uden automatisk valutaomregning.
 - En tildelt chauffør kan udføre check-in og ændre bagagestatus.
+- Administratoren og de tildelte chauffører kan ændre betaling fra ikke betalt til betalt. Betaling kan ikke ændres tilbage til ikke betalt.
 - Reglerne håndhæves på serveren og er ikke kun skjult i brugerfladen.
