@@ -32,6 +32,7 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - To chauffører pr. tur, hvor én er primær
 - Chauffører kan kun åbne ture, de selv er tildelt
 - Passagerregistrering, betalingsstatus og kontant beløb
+- Kontant betaling af både billet og bagage i DKK eller EUR
 - Visuel sædeplan med grøn markering af ledige sæder og unik reservation pr. tur
 - Administratorkontrolleret buskapacitet: op til 54 sæder i almindelig bus og op til 84 i dobbeltdækker
 - Frontsæder (+100 kr.) og bordpladser (+75 kr.)

@@ -23,21 +23,14 @@ function seed() {
   const tomorrow = new Date(Date.now() + 86400000);
   tomorrow.setHours(8, 0, 0, 0);
   return {
-    meta: { version: 1, nextId: 20 },
+    meta: { version: 3, nextId: 20 },
     users: [
       { id: 1, name: 'Administrator', email: 'admin@albaturist.dk', role: 'admin', salt: admin.salt, passwordHash: admin.hash },
       { id: 2, name: 'Mads Chauffør', email: 'mads@albaturist.dk', role: 'driver', salt: driver1.salt, passwordHash: driver1.hash },
       { id: 3, name: 'Sara Chauffør', email: 'sara@albaturist.dk', role: 'driver', salt: driver2.salt, passwordHash: driver2.hash }
     ],
-    stops: [
-      { id: 4, name: 'København', address: 'Ingerslevsgade' },
-      { id: 5, name: 'Odense', address: 'Dannebrogsgade' },
-      { id: 6, name: 'Aarhus', address: 'Fredensgade' },
-      { id: 7, name: 'Aalborg', address: 'John F. Kennedys Plads' }
-    ],
-    trips: [
-      { id: 8, title: 'København → Aarhus', departureAt: tomorrow.toISOString(), originId: 4, destinationId: 6, basePrice: 350, seatCount: 54, primaryDriverId: 2, secondaryDriverId: 3, status: 'planned' }
-    ],
+    stops: [],
+    trips: [],
     passengers: [], baggage: []
   };
 }
@@ -53,6 +46,10 @@ function saveDb(value = db) {
 }
 let db = loadDb();
 let migrated = false;
+if ((db.meta?.version || 1) < 3) {
+  db.stops = []; db.trips = []; db.passengers = []; db.baggage = [];
+  db.meta.version = 3; migrated = true;
+}
 for (const trip of db.trips) {
   if (!trip.seatCount) { trip.seatCount = 54; migrated = true; }
 }
@@ -171,7 +168,8 @@ async function api(req, res, pathname) {
     if (!data.name?.trim() || !data.phone?.trim() || !data.pickupStopId || !data.destinationStopId || !seat) return fail(res, 400, 'Udfyld passagerens obligatoriske felter');
     if (seat.passengerId) return fail(res, 409, 'Sædet er allerede reserveret');
     if (!['unpaid','cash'].includes(data.paymentStatus)) return fail(res, 400, 'Ugyldig betalingsstatus');
-    const passenger = { id: id(), tripId: trip.id, name: data.name.trim(), phone: data.phone.trim(), pickupStopId: Number(data.pickupStopId), destinationStopId: Number(data.destinationStopId), paymentStatus: data.paymentStatus, cashAmount: data.paymentStatus === 'cash' ? Number(data.cashAmount || 0) : 0, seatNumber: seat.number, seatType: seat.type, seatSurcharge: seat.surcharge, totalPrice: trip.basePrice + seat.surcharge, checkedIn: false, checkedInAt: null };
+    const paymentCurrency = ['DKK','EUR'].includes(data.paymentCurrency) ? data.paymentCurrency : 'DKK';
+    const passenger = { id: id(), tripId: trip.id, name: data.name.trim(), phone: data.phone.trim(), pickupStopId: Number(data.pickupStopId), destinationStopId: Number(data.destinationStopId), paymentStatus: data.paymentStatus, paymentCurrency, cashAmount: data.paymentStatus === 'cash' ? Number(data.cashAmount || 0) : 0, seatNumber: seat.number, seatType: seat.type, seatSurcharge: seat.surcharge, totalPrice: trip.basePrice + seat.surcharge, checkedIn: false, checkedInAt: null };
     db.passengers.push(passenger); saveDb(); return json(res, 201, passenger);
   }
   if (part === 'passengers' && req.method === 'PATCH') {
@@ -181,7 +179,8 @@ async function api(req, res, pathname) {
   if (part === 'baggage' && req.method === 'POST') {
     if (user.role !== 'admin') return fail(res, 403, 'Kun administratoren kan registrere bagage');
     const data = await body(req); if (!data.senderName?.trim() || !data.phone?.trim() || !data.pickupStopId || !data.destinationStopId || !data.pieces) return fail(res, 400, 'Udfyld bagagens obligatoriske felter');
-    const item = { id: id(), tripId: trip.id, senderName: data.senderName.trim(), phone: data.phone.trim(), pickupStopId: Number(data.pickupStopId), destinationStopId: Number(data.destinationStopId), pieces: Number(data.pieces), description: String(data.description || '').trim(), paymentStatus: data.paymentStatus === 'cash' ? 'cash' : 'unpaid', cashAmount: data.paymentStatus === 'cash' ? Number(data.cashAmount || 0) : 0, notes: String(data.notes || '').trim(), status: 'registered' };
+    const paymentCurrency = ['DKK','EUR'].includes(data.paymentCurrency) ? data.paymentCurrency : 'DKK';
+    const item = { id: id(), tripId: trip.id, senderName: data.senderName.trim(), phone: data.phone.trim(), pickupStopId: Number(data.pickupStopId), destinationStopId: Number(data.destinationStopId), pieces: Number(data.pieces), description: String(data.description || '').trim(), paymentStatus: data.paymentStatus === 'cash' ? 'cash' : 'unpaid', paymentCurrency, cashAmount: data.paymentStatus === 'cash' ? Number(data.cashAmount || 0) : 0, notes: String(data.notes || '').trim(), status: 'registered' };
     db.baggage.push(item); saveDb(); return json(res, 201, item);
   }
   if (part === 'baggage' && req.method === 'PATCH') {

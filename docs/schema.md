@@ -25,7 +25,7 @@ Den lokale MVP gemmer nedenstående relationelle struktur som JSON. ID-reference
 
 - `id`, `tripId`, `name`, `phone`
 - `pickupStopId`, `destinationStopId`
-- `paymentStatus`, `cashAmount`
+- `paymentStatus`, `paymentCurrency` (`DKK` eller `EUR`), `cashAmount`
 - `seatNumber`, `seatType`, `seatSurcharge`, `totalPrice`
 - `checkedIn`, `checkedInAt`
 
@@ -36,7 +36,7 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 - `id`, `tripId`, `senderName`, `phone`
 - `pickupStopId`, `destinationStopId`
 - `pieces`, `description`, `notes`
-- `paymentStatus`, `cashAmount`
+- `paymentStatus`, `paymentCurrency` (`DKK` eller `EUR`), `cashAmount`
 - `status`
 
 ## Adgangsregler
