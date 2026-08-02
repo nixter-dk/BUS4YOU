@@ -42,6 +42,9 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Frontsæder (+100 kr.) og bordpladser (+75 kr.)
 - Check-in fra passagerlisten
 - Administrator og tildelte chauffører kan registrere ubetalte billetter og bagage som betalt i bus eller salgsbutik; betalingen kan ikke føres tilbage til ubetalt
+- Chaufførvenlig passagerliste med søgning, filtre, opsamlingsgrupper, status, udeblevet-markering, opkald og passagerdetaljer
+- Kontantansvar pr. chauffør for billet- og bagagebetalinger modtaget i bussen
+- Turudgifter med upload af PDF- eller billedkvittering, kategori, beløb og valuta
 - Separat liste over sendt bagage
 - Bagageflow: registreret, modtaget, ombord, udleveret og ikke afhentet
 - Vedvarende lokal database med atomisk lagring

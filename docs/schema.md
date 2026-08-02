@@ -45,6 +45,13 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 - `paymentStatus`, `paymentCurrency` (`DKK` eller `EUR`), `cashAmount`, `paymentLocation`, `paymentRecordedAt`, `paymentRecordedBy`
 - `status`
 
+### expenses
+
+- `id`, `tripId`, `category`, `description`
+- `amount`, `currency`
+- `receiptName`, `receiptType`, `receiptFile`
+- `createdAt`, `createdBy`
+
 ## Adgangsregler
 
 - Administratoren kan læse og administrere alle ture.
@@ -56,4 +63,6 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 - Kun administratoren kan se den samlede salgs- og økonomirapport. DKK og EUR summeres separat uden automatisk valutaomregning.
 - En tildelt chauffør kan udføre check-in og ændre bagagestatus.
 - Administratoren og de tildelte chauffører kan ændre betaling fra ikke betalt til betalt. Betaling kan ikke ændres tilbage til ikke betalt.
+- Ved betaling i bussen knyttes kontanterne til chaufføren, som udførte check-in. Uden check-in knyttes de til chaufføren, som registrerede betalingen.
+- Administratoren og de tildelte chauffører kan registrere turudgifter og uploade en PDF- eller billedkvittering på højst 5 MB.
 - Reglerne håndhæves på serveren og er ikke kun skjult i brugerfladen.
