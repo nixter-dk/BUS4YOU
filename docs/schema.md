@@ -47,7 +47,7 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 
 ### expenses
 
-- `id`, `tripId`, `category`, `description`
+- `id`, `tripId`, `expenseDate` (hentes automatisk fra turens afgang), `category`, `description`
 - `amount`, `currency`
 - `receiptName`, `receiptType`, `receiptFile`
 - `createdAt`, `createdBy`

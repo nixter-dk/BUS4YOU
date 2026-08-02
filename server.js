@@ -148,7 +148,7 @@ async function api(req, res, pathname) {
     const sumByCurrency = records => ['DKK','EUR'].reduce((result,currency) => {
       result[currency] = records.filter(record => record.paymentStatus === 'cash' && (record.paymentCurrency || 'DKK') === currency).reduce((sum,record) => sum + Number(record.cashAmount || 0),0); return result;
     },{});
-    const addTrip = record => { const trip = db.trips.find(t => t.id === record.tripId); return { ...record, tripTitle: trip?.title || 'Ukendt tur', departureAt: trip?.departureAt || null }; };
+    const addTrip = record => { const trip = db.trips.find(t => t.id === record.tripId); return { ...record, tripTitle: trip?.title || 'Ukendt tur', departureAt: trip?.departureAt || null, createdByName: record.createdBy ? db.users.find(u => u.id === record.createdBy)?.name || 'Ukendt' : null }; };
     const cashByDriver = db.users.filter(u => u.role === 'driver').map(driver => {
       const held = [...db.passengers,...db.baggage].filter(record => record.paymentStatus === 'cash' && record.paymentLocation === 'bus' && record.cashHolderUserId === driver.id);
       return { driverId: driver.id, driverName: driver.name, amounts: sumByCurrency(held), payments: held.length };
@@ -244,7 +244,7 @@ async function api(req, res, pathname) {
     if (seatCount < highestBookedSeat) return fail(res, 409, `Der er allerede booket sæde ${highestBookedSeat}. Kapaciteten kan ikke sættes lavere.`);
     trip.seatCount = seatCount; saveDb(); return json(res, 200, tripView(trip));
   }
-  if (!part && req.method === 'GET') return json(res, 200, { trip: tripView(trip), passengers: db.passengers.filter(p => p.tripId === trip.id), baggage: db.baggage.filter(b => b.tripId === trip.id), expenses: db.expenses.filter(e => e.tripId === trip.id), seats: seatMap(trip.id) });
+  if (!part && req.method === 'GET') return json(res, 200, { trip: tripView(trip), passengers: db.passengers.filter(p => p.tripId === trip.id), baggage: db.baggage.filter(b => b.tripId === trip.id), expenses: db.expenses.filter(e => e.tripId === trip.id).map(e => ({...e,createdByName:db.users.find(u=>u.id===e.createdBy)?.name||'Ukendt'})), seats: seatMap(trip.id) });
   if (part === 'seats' && req.method === 'GET') return json(res, 200, seatMap(trip.id));
   if (part === 'passengers' && req.method === 'POST') {
     if (user.role !== 'admin') return fail(res, 403, 'Kun administratoren kan oprette passagerer');
@@ -309,8 +309,8 @@ async function api(req, res, pathname) {
     if (!fileData.length || fileData.length > 5 * 1024 * 1024) return fail(res, 400, 'Kvitteringen skal være mellem 1 byte og 5 MB');
     const extensions = { 'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','application/pdf':'.pdf' }; const receiptFile = `${crypto.randomBytes(18).toString('hex')}${extensions[receiptType]}`;
     const uploadDir = path.join(__dirname,'data','uploads'); fs.mkdirSync(uploadDir,{recursive:true}); fs.writeFileSync(path.join(uploadDir,receiptFile),fileData);
-    const expense = { id:id(),tripId:trip.id,category,description:String(data.description||'').trim(),amount,currency,receiptName,receiptType,receiptFile,createdAt:new Date().toISOString(),createdBy:user.id };
-    db.expenses.push(expense); saveDb(); return json(res,201,expense);
+    const expense = { id:id(),tripId:trip.id,expenseDate:trip.departureAt,category,description:String(data.description||'').trim(),amount,currency,receiptName,receiptType,receiptFile,createdAt:new Date().toISOString(),createdBy:user.id };
+    db.expenses.push(expense); saveDb(); return json(res,201,{...expense,createdByName:user.name});
   }
   return fail(res, 405, 'Handlingen er ikke tilladt');
 }
