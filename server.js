@@ -95,10 +95,10 @@ function seatMap(tripId) {
   return Array.from({ length: trip?.seatCount || 54 }, (_, index) => {
     const number = index + 1;
     const assignedBus = trip?.busId ? db.buses.find(b => b.id === trip.busId) : null;
-    const isDouble = assignedBus?.type === 'double';
+    const isDouble = assignedBus?.type === 'double' || trip?.seatCount === 84;
     const isFront = isDouble ? number >= 23 && number <= 26 : number <= 4;
     const isTable = isDouble ? number >= 1 && number <= 16 : [13,14,17,18,21,22,25,26].includes(number);
-    const lowerDeckSeats = assignedBus?.type === 'double' ? 22 : trip?.seatCount;
+    const lowerDeckSeats = isDouble ? 22 : trip?.seatCount;
     return { number, deck: number <= lowerDeckSeats ? 'lower' : 'upper', type: isFront ? 'front' : isTable ? 'table' : 'standard', surcharge: isFront ? 100 : isTable ? 75 : 0, passengerId: taken.get(number) || null };
   });
 }
@@ -251,6 +251,12 @@ async function api(req, res, pathname) {
     if (data.completedStopId) {
       const stopId = Number(data.completedStopId); if (!db.stops.some(s => s.id === stopId)) return fail(res,400,'Opsamlingsstedet findes ikke');
       trip.completedStopIds = trip.completedStopIds || []; if (!trip.completedStopIds.includes(stopId)) trip.completedStopIds.push(stopId); saveDb(); return json(res,200,tripView(trip));
+    }
+    if (data.busId) {
+      if (user.role !== 'admin') return fail(res,403,'Kun administratoren kan skifte bus');
+      const bus = db.buses.find(b=>b.id===Number(data.busId)); if(!bus)return fail(res,404,'Bussen findes ikke');
+      const highestBookedSeat = Math.max(0,...db.passengers.filter(p=>p.tripId===trip.id).map(p=>p.seatNumber)); if(bus.seatCount<highestBookedSeat)return fail(res,409,`Sæde ${highestBookedSeat} er allerede reserveret og findes ikke i den valgte bus`);
+      trip.busId=bus.id;trip.seatCount=bus.seatCount;saveDb();return json(res,200,tripView(trip));
     }
     if (user.role !== 'admin') return fail(res, 403, 'Kun administratoren kan ændre antal sæder');
     const seatCount = Number(data.seatCount);
