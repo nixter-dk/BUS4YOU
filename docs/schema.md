@@ -25,7 +25,7 @@ Den lokale MVP gemmer nedenstående relationelle struktur som JSON. ID-reference
 
 - `id`, `name`, `registration`
 - `type`: `standard` eller `double`
-- `seatCount`, `lowerDeckSeats`
+- `seatCount`, `lowerDeckSeats` (dobbeltdækker er fast 84/22, hvilket giver 62 sæder på overetagen)
 
 ### passengers
 
