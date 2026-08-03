@@ -27,7 +27,7 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Login med sikre, saltede `scrypt`-password-hashes og HTTP-only sessionscookies
 - Roller: administrator, chauffør og salgschef
 - Separat chaufføradministration, hvor kun administratoren kan oprette, redigere og slette chaufførkonti
-- Kalender og turdashboard
+- Driftskalender med dags-, uge- og månedsvisning, mobil tidslinje, ressourcekonflikter, driftsadvarsler, filtre og hurtigt turpanel
 - Opsamlingssteder, som kun administratoren kan oprette, redigere og slette
 - To chauffører pr. tur, hvor én er primær
 - Administratoren kan skifte turens primære og sekundære chauffør, indtil den første passager er checket ind

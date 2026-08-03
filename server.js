@@ -60,6 +60,7 @@ if ((db.meta?.version || 1) < 7) {
 if ((db.meta?.version || 1) < 8) { for (const expense of db.expenses || []) if (!expense.status) expense.status = 'pending'; db.meta.version = 8; migrated = true; }
 for (const trip of db.trips) {
   if (!trip.seatCount) { trip.seatCount = 54; migrated = true; }
+  if (!trip.durationMinutes) { trip.durationMinutes = 480; migrated = true; }
 }
 if (migrated) saveDb();
 function id() { db.meta.nextId += 1; return db.meta.nextId; }
@@ -85,13 +86,15 @@ async function body(req) {
 function tripView(t) {
   const passengers = db.passengers.filter(p => p.tripId === t.id);
   const baggage = db.baggage.filter(b => b.tripId === t.id);
+  const expenses = db.expenses.filter(expense=>expense.tripId===t.id);
+  const unsettledCash = [...passengers,...baggage].filter(record=>record.paymentStatus==='cash'&&['bus','departure'].includes(record.paymentLocation)&&record.cashHolderUserId&&!record.cashHandedOverAt);
   return { ...t,
     origin: db.stops.find(s => s.id === t.originId), destination: db.stops.find(s => s.id === t.destinationId),
     bus: db.buses.find(b => b.id === t.busId) || null,
     primaryDriver: db.users.find(u => u.id === t.primaryDriverId)?.name || null,
     secondaryDriver: db.users.find(u => u.id === t.secondaryDriverId)?.name || null,
     salesManager: db.users.find(u => u.id === t.salesManagerId)?.name || null,
-    counts: { passengers: passengers.length, checkedIn: passengers.filter(p => p.checkedIn).length, baggage: baggage.length, onboard: baggage.filter(b => b.status === 'onboard').length }
+    counts: { passengers: passengers.length, checkedIn: passengers.filter(p => p.checkedIn).length, baggage: baggage.length, onboard: baggage.filter(b => b.status === 'onboard').length, unpaid: [...passengers,...baggage].filter(record=>record.paymentStatus==='unpaid').length, pendingExpenses:expenses.filter(expense=>(expense.status||'pending')==='pending').length, missingReceipts:expenses.filter(expense=>!expense.receiptFile).length, unsettledCash:unsettledCash.length }
   };
 }
 function seatMap(tripId) {
@@ -273,7 +276,8 @@ async function api(req, res, pathname) {
     if (Number(data.primaryDriverId) === Number(data.secondaryDriverId)) return fail(res, 400, 'De to chauffører skal være forskellige');
     const bus = db.buses.find(b => b.id === Number(data.busId)); if (!bus) return fail(res, 400, 'Vælg en gyldig bus');
     const salesManagerId=data.salesManagerId?Number(data.salesManagerId):null;if(salesManagerId&&!db.users.some(candidate=>candidate.id===salesManagerId&&candidate.role==='sales_manager'))return fail(res,400,'Vælg en gyldig salgschef');
-    const trip = { id: id(), title: data.title.trim(), departureAt: new Date(data.departureAt).toISOString(), originId: Number(data.originId), destinationId: Number(data.destinationId), basePrice: Number(data.basePrice || 0), busId: bus.id, seatCount: bus.seatCount, primaryDriverId: Number(data.primaryDriverId), secondaryDriverId: data.secondaryDriverId ? Number(data.secondaryDriverId) : null, salesManagerId, status: 'planned' };
+    const durationMinutes=Math.max(30,Math.min(1440,Number(data.durationMinutes)||480));
+    const trip = { id: id(), title: data.title.trim(), departureAt: new Date(data.departureAt).toISOString(), durationMinutes, originId: Number(data.originId), destinationId: Number(data.destinationId), basePrice: Number(data.basePrice || 0), busId: bus.id, seatCount: bus.seatCount, primaryDriverId: Number(data.primaryDriverId), secondaryDriverId: data.secondaryDriverId ? Number(data.secondaryDriverId) : null, salesManagerId, status: 'planned' };
     db.trips.push(trip); saveDb(); return json(res, 201, tripView(trip));
   }
   const expenseMatch = pathname.match(/^\/api\/expenses\/(\d+)$/);
