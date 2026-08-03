@@ -53,6 +53,13 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 - `receiptName`, `receiptType`, `receiptFile`
 - `createdAt`, `createdBy`
 
+### cashSettlements
+
+- `id`, `tripId`, `driverId`, `status`
+- `expected`, `delivered`, `difference` opdelt i DKK og EUR
+- `paymentRefs`, `submittedAt`, `submittedBy`
+- `reviewedAt`, `reviewedBy`, `reviewNote`
+
 ## Adgangsregler
 
 - Administratoren kan læse og administrere alle ture.
@@ -66,4 +73,5 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 - Administratoren og de tildelte chauffører kan ændre betaling fra ikke betalt til betalt. Betaling kan ikke ændres tilbage til ikke betalt.
 - Ved betaling i bussen knyttes kontanterne til chaufføren, som udførte check-in. Uden check-in knyttes de til chaufføren, som registrerede betalingen.
 - Administratoren og de tildelte chauffører kan registrere turudgifter og uploade en PDF- eller billedkvittering på højst 5 MB.
+- Chaufføren kan indsende en kontantafstemning for sin tur. Kun administratoren kan godkende eller afvise den, og kontanter flyttes først til kontoret ved godkendelse.
 - Reglerne håndhæves på serveren og er ikke kun skjult i brugerfladen.
