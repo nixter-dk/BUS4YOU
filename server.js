@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
 const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'data', 'db.json');
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(path.dirname(DB_FILE), 'uploads');
 const PUBLIC = path.join(__dirname, 'public');
 const sessions = new Map();
 
@@ -292,7 +293,7 @@ async function api(req, res, pathname) {
     const data=await body(req);
     if(data.receiptData){
       const expenseTrip=db.trips.find(trip=>trip.id===expense.tripId);if(!expenseTrip||!allowedTrip(user,expenseTrip)||user.role==='sales_manager')return fail(res,403,'Du har ikke adgang til udgiften');
-      const receiptType=String(data.receiptType||''),receiptName=path.basename(String(data.receiptName||'kvittering'));if(!['image/jpeg','image/png','image/webp','application/pdf'].includes(receiptType))return fail(res,400,'Kvitteringen skal være PDF, JPG, PNG eller WebP');const encoded=String(data.receiptData).replace(/^data:[^;]+;base64,/,'');const fileData=Buffer.from(encoded,'base64');if(!fileData.length||fileData.length>5*1024*1024)return fail(res,400,'Kvitteringen skal være mellem 1 byte og 5 MB');const extensions={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','application/pdf':'.pdf'},receiptFile=`${crypto.randomBytes(18).toString('hex')}${extensions[receiptType]}`,uploadDir=path.join(__dirname,'data','uploads');fs.mkdirSync(uploadDir,{recursive:true});fs.writeFileSync(path.join(uploadDir,receiptFile),fileData);expense.receiptType=receiptType;expense.receiptName=receiptName;expense.receiptFile=receiptFile;saveDb();return json(res,200,{...expense,createdByName:userName(expense.createdBy),paidByName:userName(expense.paidByUserId||expense.createdBy),reviewedByName:userName(expense.reviewedBy)});
+      const receiptType=String(data.receiptType||''),receiptName=path.basename(String(data.receiptName||'kvittering'));if(!['image/jpeg','image/png','image/webp','application/pdf'].includes(receiptType))return fail(res,400,'Kvitteringen skal være PDF, JPG, PNG eller WebP');const encoded=String(data.receiptData).replace(/^data:[^;]+;base64,/,'');const fileData=Buffer.from(encoded,'base64');if(!fileData.length||fileData.length>5*1024*1024)return fail(res,400,'Kvitteringen skal være mellem 1 byte og 5 MB');const extensions={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','application/pdf':'.pdf'},receiptFile=`${crypto.randomBytes(18).toString('hex')}${extensions[receiptType]}`,uploadDir=UPLOAD_DIR;fs.mkdirSync(uploadDir,{recursive:true});fs.writeFileSync(path.join(uploadDir,receiptFile),fileData);expense.receiptType=receiptType;expense.receiptName=receiptName;expense.receiptFile=receiptFile;saveDb();return json(res,200,{...expense,createdByName:userName(expense.createdBy),paidByName:userName(expense.paidByUserId||expense.createdBy),reviewedByName:userName(expense.reviewedBy)});
     }
     if (user.role !== 'admin') return fail(res,403,'Kun administratoren kan godkende udgifter');
     if(data.reimbursementStatus==='paid'){
@@ -311,7 +312,7 @@ async function api(req, res, pathname) {
     const expense = db.expenses.find(e => e.id === Number(receiptMatch[1])); if (!expense || !expense.receiptFile) return fail(res, 404, 'Kvitteringen findes ikke');
     const expenseTrip = db.trips.find(t => t.id === expense.tripId); if (!expenseTrip || !allowedTrip(user,expenseTrip)) return fail(res, 403, 'Du har ikke adgang til kvitteringen');
     if(user.role==='sales_manager')return fail(res,403,'Salgschefen har ikke adgang til turudgifter');
-    const file = path.join(__dirname,'data','uploads',expense.receiptFile); if (!fs.existsSync(file)) return fail(res, 404, 'Kvitteringsfilen findes ikke');
+    const file = path.join(UPLOAD_DIR,expense.receiptFile); if (!fs.existsSync(file)) return fail(res, 404, 'Kvitteringsfilen findes ikke');
     res.writeHead(200,{ 'Content-Type': expense.receiptType, 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(expense.receiptName)}` }); fs.createReadStream(file).pipe(res); return;
   }
   const match = pathname.match(/^\/api\/trips\/(\d+)(?:\/(passengers|baggage|seats|expenses|settlements))?$/);
@@ -440,7 +441,7 @@ async function api(req, res, pathname) {
     const paymentMethod=['company_card','cash','private'].includes(data.paymentMethod)?data.paymentMethod:'cash';
     const allowedPayers=[user.id,trip.primaryDriverId,trip.secondaryDriverId].filter(Boolean),paidByUserId=user.role==='admin'&&allowedPayers.includes(Number(data.paidByUserId))?Number(data.paidByUserId):user.id;
     let receiptType=null,receiptName=null,receiptFile=null;
-    if(data.receiptData){receiptType=String(data.receiptType||'');receiptName=path.basename(String(data.receiptName||'kvittering'));if(!['image/jpeg','image/png','image/webp','application/pdf'].includes(receiptType))return fail(res,400,'Kvitteringen skal være PDF, JPG, PNG eller WebP');const encoded=String(data.receiptData).replace(/^data:[^;]+;base64,/,'');const fileData=Buffer.from(encoded,'base64');if(!fileData.length||fileData.length>5*1024*1024)return fail(res,400,'Kvitteringen skal være mellem 1 byte og 5 MB');const extensions={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','application/pdf':'.pdf'};receiptFile=`${crypto.randomBytes(18).toString('hex')}${extensions[receiptType]}`;const uploadDir=path.join(__dirname,'data','uploads');fs.mkdirSync(uploadDir,{recursive:true});fs.writeFileSync(path.join(uploadDir,receiptFile),fileData);}
+    if(data.receiptData){receiptType=String(data.receiptType||'');receiptName=path.basename(String(data.receiptName||'kvittering'));if(!['image/jpeg','image/png','image/webp','application/pdf'].includes(receiptType))return fail(res,400,'Kvitteringen skal være PDF, JPG, PNG eller WebP');const encoded=String(data.receiptData).replace(/^data:[^;]+;base64,/,'');const fileData=Buffer.from(encoded,'base64');if(!fileData.length||fileData.length>5*1024*1024)return fail(res,400,'Kvitteringen skal være mellem 1 byte og 5 MB');const extensions={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','application/pdf':'.pdf'};receiptFile=`${crypto.randomBytes(18).toString('hex')}${extensions[receiptType]}`;const uploadDir=UPLOAD_DIR;fs.mkdirSync(uploadDir,{recursive:true});fs.writeFileSync(path.join(uploadDir,receiptFile),fileData);}
     const expense = { id:id(),tripId:trip.id,expenseDate:trip.departureAt,category,description:String(data.description||'').trim(),amount,currency,paymentMethod,paidByUserId,receiptName,receiptType,receiptFile,createdAt:new Date().toISOString(),createdBy:user.id,status:'pending',reviewedAt:null,reviewedBy:null,reviewNote:'',reimbursementStatus:paymentMethod==='private'?'pending':'not_applicable',reimbursedAt:null,reimbursedBy:null };
     db.expenses.push(expense); saveDb(); return json(res,201,{...expense,createdByName:user.name,paidByName:userName(paidByUserId)});
   }

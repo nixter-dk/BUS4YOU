@@ -82,6 +82,16 @@ docs/schema.md      Datamodel og produktionsvej
 | `HOST` | `127.0.0.1` | Netværksinterface |
 | `DB_FILE` | `data/db.json` | Placering af databasen |
 
+## Systemtest
+
+Kør den samlede test af login, roller, ture, sædeplan, passagerer, bagage, udgifter, kvitteringer, kontantafstemning og økonomirapporter med:
+
+```powershell
+npm test
+```
+
+Testen bruger sin egen midlertidige database og ændrer derfor ikke driftsdata.
+
 ## GitHub
 
 Repositoryet `nixter-dk/busops.albaturist.dk` var tilgængeligt, men tomt, og projektet er derfor bygget direkte i en klon af det.

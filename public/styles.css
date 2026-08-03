@@ -64,3 +64,13 @@
 @media(max-width:1100px){.dashboard-action-grid{grid-template-columns:1fr 1fr}.dashboard-workspace,.dashboard-lower{grid-template-columns:1fr}.dashboard-quick-panel>div{grid-template-columns:1fr 1fr}.dashboard-quick-panel>div>button{min-width:0}}
 @media(max-width:700px){.dashboard-welcome{display:grid;padding:18px}.dashboard-welcome h2{font-size:21px}.dashboard-live{justify-self:start}.dashboard-action-grid{display:flex;overflow-x:auto;margin-left:-12px;margin-right:-12px;padding:1px 12px 5px;scrollbar-width:none}.dashboard-action-card{flex:0 0 245px}.dashboard-next-trip{grid-template-columns:72px 1fr;padding:13px}.dashboard-next-time{padding:9px}.dashboard-next-time strong{font-size:19px}.dashboard-next-progress{grid-column:1/-1;padding-top:8px;border-top:1px solid var(--line)}.dashboard-next-actions{justify-content:stretch}.dashboard-next-actions button{flex:1;min-height:44px}.dashboard-quick-panel>div{grid-template-columns:1fr}.dashboard-today-panel .ops-trip-card.compact{grid-template-columns:65px 1fr}.dashboard-sales-grid{grid-template-columns:1fr}.dashboard-holder-list>div{display:grid}.dashboard-holder-list b{font-size:8px}}
 @media(max-width:390px){.dashboard-next-trip{grid-template-columns:1fr}.dashboard-next-time{text-align:left}.dashboard-next-time small,.dashboard-next-time span{display:inline}.dashboard-next-actions{display:grid;grid-template-columns:1fr}.dashboard-action-card{flex-basis:220px}}
+
+/* Log ud skal altid kunne nås fra den mobile bundmenu. */
+@media(max-width:700px){
+  .sidebar nav{min-width:0}
+  .sidebar-bottom{display:flex!important;flex:0 0 50px;align-items:stretch;margin:0;padding:0;border:0}
+  .sidebar-bottom .avatar,.sidebar-bottom>div{display:none!important}
+  #logout{display:grid!important;place-items:center;width:50px;height:100%;padding:5px 2px;background:transparent;color:#aebcd0;font-size:0;font-weight:650}
+  #logout:before{content:"↗";font-size:18px;line-height:1}
+  #logout:after{content:"Log ud";font-size:9px;line-height:1;white-space:nowrap}
+}
