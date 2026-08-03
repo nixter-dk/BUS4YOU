@@ -52,6 +52,8 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 - `amount`, `currency`
 - `receiptName`, `receiptType`, `receiptFile`
 - `createdAt`, `createdBy`
+- `status`: `pending`, `approved` eller `rejected`
+- `reviewedAt`, `reviewedBy`, `reviewNote`
 
 ### cashSettlements
 

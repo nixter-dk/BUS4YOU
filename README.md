@@ -34,6 +34,8 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Passagerregistrering, betalingsstatus og kontant beløb
 - Kontant betaling af både billet og bagage i DKK eller EUR
 - Administratorrapport med solgte billetter samt billet- og bagageindtægter opdelt i DKK og EUR
+- Resultat pr. tur med omsætning, godkendte/afventende udgifter, nettoresultat, belægningsgrad, periodefiltre og CSV-eksport
+- Administratorgodkendelse eller afvisning af turudgifter; kun godkendte udgifter indgår i resultatet
 - Visuel sædeplan med grøn markering af ledige sæder og unik reservation pr. tur
 - Administratorkontrolleret buskapacitet: op til 54 sæder i almindelig bus og fast 84-sæders dobbeltdækker med 22 sæder nederst og 62 øverst
 - Separat busregister med navn, registreringsnummer, bustype og kapacitet

@@ -23,7 +23,7 @@ function seed() {
   const tomorrow = new Date(Date.now() + 86400000);
   tomorrow.setHours(8, 0, 0, 0);
   return {
-    meta: { version: 7, nextId: 20 },
+    meta: { version: 8, nextId: 20 },
     users: [
       { id: 1, name: 'Administrator', email: 'admin@albaturist.dk', role: 'admin', salt: admin.salt, passwordHash: admin.hash },
       { id: 2, name: 'Mads Chauffør', email: 'mads@albaturist.dk', role: 'driver', salt: driver1.salt, passwordHash: driver1.hash },
@@ -57,6 +57,7 @@ if ((db.meta?.version || 1) < 7) {
   for (const bus of db.buses || []) if (bus.type === 'double') { bus.seatCount = 84; bus.lowerDeckSeats = 22; db.trips.filter(t => t.busId === bus.id).forEach(t => t.seatCount = 84); }
   db.meta.version = 7; migrated = true;
 }
+if ((db.meta?.version || 1) < 8) { for (const expense of db.expenses || []) if (!expense.status) expense.status = 'pending'; db.meta.version = 8; migrated = true; }
 for (const trip of db.trips) {
   if (!trip.seatCount) { trip.seatCount = 54; migrated = true; }
 }
@@ -156,19 +157,25 @@ async function api(req, res, pathname) {
     const sumByCurrency = records => ['DKK','EUR'].reduce((result,currency) => {
       result[currency] = records.filter(record => record.paymentStatus === 'cash' && (record.paymentCurrency || 'DKK') === currency).reduce((sum,record) => sum + Number(record.cashAmount || 0),0); return result;
     },{});
-    const addTrip = record => { const trip = db.trips.find(t => t.id === record.tripId); return { ...record, tripTitle: trip?.title || 'Ukendt tur', departureAt: trip?.departureAt || null, createdByName: record.createdBy ? db.users.find(u => u.id === record.createdBy)?.name || 'Ukendt' : null }; };
+    const addTrip = record => { const trip = db.trips.find(t => t.id === record.tripId); return { ...record, tripTitle: trip?.title || 'Ukendt tur', departureAt: trip?.departureAt || null, createdByName: record.createdBy ? db.users.find(u => u.id === record.createdBy)?.name || 'Ukendt' : null, reviewedByName: record.reviewedBy ? db.users.find(u => u.id === record.reviewedBy)?.name || 'Ukendt' : null }; };
     const cashByDriver = db.users.filter(u => u.role === 'driver').map(driver => {
       const held = [...db.passengers,...db.baggage].filter(record => record.paymentStatus === 'cash' && record.paymentLocation === 'bus' && record.cashHolderUserId === driver.id && !record.cashHandedOverAt);
       return { driverId: driver.id, driverName: driver.name, amounts: sumByCurrency(held), payments: held.length };
     }).filter(row => row.payments > 0);
     const approvedSettlements = db.cashSettlements.filter(settlement=>settlement.status==='approved');
     const cashAtOffice = ['DKK','EUR'].reduce((totals,currency)=>{totals[currency]=approvedSettlements.reduce((sum,settlement)=>sum+Number(settlement.delivered?.[currency]||0),0);return totals;},{});
+    const tripResults = db.trips.map(trip => {
+      const passengers=db.passengers.filter(p=>p.tripId===trip.id),baggage=db.baggage.filter(b=>b.tripId===trip.id),tripExpenses=db.expenses.filter(e=>e.tripId===trip.id);
+      const revenueRecords=[...passengers,...baggage].filter(record=>record.paymentStatus==='cash');
+      const revenue=sumByCurrency(revenueRecords),approvedExpenses=['DKK','EUR'].reduce((totals,currency)=>{totals[currency]=tripExpenses.filter(e=>e.status==='approved'&&e.currency===currency).reduce((sum,e)=>sum+Number(e.amount||0),0);return totals;},{}),pendingExpenses=['DKK','EUR'].reduce((totals,currency)=>{totals[currency]=tripExpenses.filter(e=>e.status==='pending'&&e.currency===currency).reduce((sum,e)=>sum+Number(e.amount||0),0);return totals;},{});
+      return { tripId:trip.id,title:trip.title,departureAt:trip.departureAt,busName:db.buses.find(b=>b.id===trip.busId)?.name||'Ingen bus',passengers:passengers.length,seatCount:trip.seatCount,occupancy:trip.seatCount?Math.round(passengers.length/trip.seatCount*100):0,unpaid:passengers.filter(p=>p.paymentStatus!=='cash').length,revenue,approvedExpenses,pendingExpenses,net:{DKK:revenue.DKK-approvedExpenses.DKK,EUR:revenue.EUR-approvedExpenses.EUR} };
+    });
     return json(res, 200, {
       summary: {
         tickets: db.passengers.length, paidTickets: db.passengers.filter(p => p.paymentStatus === 'cash').length, unpaidTickets: db.passengers.filter(p => p.paymentStatus !== 'cash').length,
-        ticketRevenue: sumByCurrency(db.passengers), baggage: db.baggage.length, paidBaggage: db.baggage.filter(b => b.paymentStatus === 'cash').length, unpaidBaggage: db.baggage.filter(b => b.paymentStatus !== 'cash').length, baggageRevenue: sumByCurrency(db.baggage), cashByDriver, cashAtOffice, expenseTotals: ['DKK','EUR'].reduce((totals,currency)=>{ totals[currency]=db.expenses.filter(e=>e.currency===currency).reduce((sum,e)=>sum+Number(e.amount||0),0); return totals; },{})
+        ticketRevenue: sumByCurrency(db.passengers), baggage: db.baggage.length, paidBaggage: db.baggage.filter(b => b.paymentStatus === 'cash').length, unpaidBaggage: db.baggage.filter(b => b.paymentStatus !== 'cash').length, baggageRevenue: sumByCurrency(db.baggage), cashByDriver, cashAtOffice, expenseTotals: ['DKK','EUR'].reduce((totals,currency)=>{ totals[currency]=db.expenses.filter(e=>e.status==='approved'&&e.currency===currency).reduce((sum,e)=>sum+Number(e.amount||0),0); return totals; },{}), pendingExpenseTotals: ['DKK','EUR'].reduce((totals,currency)=>{ totals[currency]=db.expenses.filter(e=>e.status==='pending'&&e.currency===currency).reduce((sum,e)=>sum+Number(e.amount||0),0); return totals; },{})
       },
-      tickets: db.passengers.map(addTrip), baggage: db.baggage.map(addTrip), expenses: db.expenses.map(addTrip)
+      tickets: db.passengers.map(addTrip), baggage: db.baggage.map(addTrip), expenses: db.expenses.map(addTrip), tripResults
     });
   }
   if (pathname === '/api/stops' && req.method === 'POST') {
@@ -234,6 +241,14 @@ async function api(req, res, pathname) {
     const trip = { id: id(), title: data.title.trim(), departureAt: new Date(data.departureAt).toISOString(), originId: Number(data.originId), destinationId: Number(data.destinationId), basePrice: Number(data.basePrice || 0), busId: bus.id, seatCount: bus.seatCount, primaryDriverId: Number(data.primaryDriverId), secondaryDriverId: data.secondaryDriverId ? Number(data.secondaryDriverId) : null, status: 'planned' };
     db.trips.push(trip); saveDb(); return json(res, 201, tripView(trip));
   }
+  const expenseMatch = pathname.match(/^\/api\/expenses\/(\d+)$/);
+  if (expenseMatch && req.method === 'PATCH') {
+    if (user.role !== 'admin') return fail(res,403,'Kun administratoren kan godkende udgifter');
+    const expense=db.expenses.find(e=>e.id===Number(expenseMatch[1]));if(!expense)return fail(res,404,'Udgiften findes ikke');
+    const data=await body(req);if(!['approved','rejected'].includes(data.status))return fail(res,400,'Vælg godkendt eller afvist');
+    if(expense.status!=='pending')return fail(res,409,'Udgiften er allerede behandlet');
+    expense.status=data.status;expense.reviewedAt=new Date().toISOString();expense.reviewedBy=user.id;expense.reviewNote=String(data.reviewNote||'').trim();saveDb();return json(res,200,{...expense,createdByName:db.users.find(u=>u.id===expense.createdBy)?.name||'Ukendt',reviewedByName:user.name});
+  }
   const receiptMatch = pathname.match(/^\/api\/expenses\/(\d+)\/receipt$/);
   if (receiptMatch && req.method === 'GET') {
     const expense = db.expenses.find(e => e.id === Number(receiptMatch[1])); if (!expense) return fail(res, 404, 'Kvitteringen findes ikke');
@@ -265,7 +280,7 @@ async function api(req, res, pathname) {
     if (seatCount < highestBookedSeat) return fail(res, 409, `Der er allerede booket sæde ${highestBookedSeat}. Kapaciteten kan ikke sættes lavere.`);
     trip.seatCount = seatCount; saveDb(); return json(res, 200, tripView(trip));
   }
-  if (!part && req.method === 'GET') return json(res, 200, { trip: tripView(trip), passengers: db.passengers.filter(p => p.tripId === trip.id), baggage: db.baggage.filter(b => b.tripId === trip.id), expenses: db.expenses.filter(e => e.tripId === trip.id).map(e => ({...e,createdByName:db.users.find(u=>u.id===e.createdBy)?.name||'Ukendt'})), settlements: db.cashSettlements.filter(s=>s.tripId===trip.id).map(s=>({...s,driverName:db.users.find(u=>u.id===s.driverId)?.name||'Ukendt',submittedByName:db.users.find(u=>u.id===s.submittedBy)?.name||'Ukendt',reviewedByName:s.reviewedBy?db.users.find(u=>u.id===s.reviewedBy)?.name||'Ukendt':null})), seats: seatMap(trip.id) });
+  if (!part && req.method === 'GET') return json(res, 200, { trip: tripView(trip), passengers: db.passengers.filter(p => p.tripId === trip.id), baggage: db.baggage.filter(b => b.tripId === trip.id), expenses: db.expenses.filter(e => e.tripId === trip.id).map(e => ({...e,createdByName:db.users.find(u=>u.id===e.createdBy)?.name||'Ukendt',reviewedByName:e.reviewedBy?db.users.find(u=>u.id===e.reviewedBy)?.name||'Ukendt':null})), settlements: db.cashSettlements.filter(s=>s.tripId===trip.id).map(s=>({...s,driverName:db.users.find(u=>u.id===s.driverId)?.name||'Ukendt',submittedByName:db.users.find(u=>u.id===s.submittedBy)?.name||'Ukendt',reviewedByName:s.reviewedBy?db.users.find(u=>u.id===s.reviewedBy)?.name||'Ukendt':null})), seats: seatMap(trip.id) });
   if (part === 'seats' && req.method === 'GET') return json(res, 200, seatMap(trip.id));
   if (part === 'passengers' && req.method === 'POST') {
     if (user.role !== 'admin') return fail(res, 403, 'Kun administratoren kan oprette passagerer');
@@ -335,7 +350,7 @@ async function api(req, res, pathname) {
     if (!fileData.length || fileData.length > 5 * 1024 * 1024) return fail(res, 400, 'Kvitteringen skal være mellem 1 byte og 5 MB');
     const extensions = { 'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','application/pdf':'.pdf' }; const receiptFile = `${crypto.randomBytes(18).toString('hex')}${extensions[receiptType]}`;
     const uploadDir = path.join(__dirname,'data','uploads'); fs.mkdirSync(uploadDir,{recursive:true}); fs.writeFileSync(path.join(uploadDir,receiptFile),fileData);
-    const expense = { id:id(),tripId:trip.id,expenseDate:trip.departureAt,category,description:String(data.description||'').trim(),amount,currency,receiptName,receiptType,receiptFile,createdAt:new Date().toISOString(),createdBy:user.id };
+    const expense = { id:id(),tripId:trip.id,expenseDate:trip.departureAt,category,description:String(data.description||'').trim(),amount,currency,receiptName,receiptType,receiptFile,createdAt:new Date().toISOString(),createdBy:user.id,status:'pending',reviewedAt:null,reviewedBy:null,reviewNote:'' };
     db.expenses.push(expense); saveDb(); return json(res,201,{...expense,createdByName:user.name});
   }
   if (part === 'settlements' && req.method === 'POST') {
