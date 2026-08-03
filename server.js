@@ -267,6 +267,17 @@ async function api(req, res, pathname) {
       const stopId = Number(data.completedStopId); if (!db.stops.some(s => s.id === stopId)) return fail(res,400,'Opsamlingsstedet findes ikke');
       trip.completedStopIds = trip.completedStopIds || []; if (!trip.completedStopIds.includes(stopId)) trip.completedStopIds.push(stopId); saveDb(); return json(res,200,tripView(trip));
     }
+    if (Object.prototype.hasOwnProperty.call(data,'primaryDriverId') || Object.prototype.hasOwnProperty.call(data,'secondaryDriverId')) {
+      if (user.role !== 'admin') return fail(res,403,'Kun administratoren kan ændre chauffører på en tur');
+      const checkInStarted = db.passengers.some(passenger => passenger.tripId === trip.id && (passenger.checkedIn || passenger.attendanceHistory?.some(event => event.action === 'checked_in')));
+      if (checkInStarted) return fail(res,409,'Chaufførerne er låst, fordi check-in er begyndt på turen');
+      const primaryDriverId = Number(data.primaryDriverId); const secondaryDriverId = data.secondaryDriverId ? Number(data.secondaryDriverId) : null;
+      const primaryDriver = db.users.find(candidate => candidate.id === primaryDriverId && candidate.role === 'driver');
+      const secondaryDriver = secondaryDriverId ? db.users.find(candidate => candidate.id === secondaryDriverId && candidate.role === 'driver') : null;
+      if (!primaryDriver || (secondaryDriverId && !secondaryDriver)) return fail(res,400,'Vælg gyldige chauffører fra chaufførregisteret');
+      if (primaryDriverId === secondaryDriverId) return fail(res,400,'Primær og sekundær chauffør skal være forskellige');
+      trip.primaryDriverId = primaryDriverId; trip.secondaryDriverId = secondaryDriverId; saveDb(); return json(res,200,tripView(trip));
+    }
     if (data.busId) {
       if (user.role !== 'admin') return fail(res,403,'Kun administratoren kan skifte bus');
       const bus = db.buses.find(b=>b.id===Number(data.busId)); if(!bus)return fail(res,404,'Bussen findes ikke');

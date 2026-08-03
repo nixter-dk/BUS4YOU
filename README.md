@@ -30,6 +30,7 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Kalender og turdashboard
 - Opsamlingssteder, som kun administratoren kan oprette, redigere og slette
 - To chauffører pr. tur, hvor én er primær
+- Administratoren kan skifte turens primære og sekundære chauffør, indtil den første passager er checket ind
 - Chauffører kan kun åbne ture, de selv er tildelt
 - Passagerregistrering, betalingsstatus og kontant beløb
 - Kontant betaling af både billet og bagage i DKK eller EUR
