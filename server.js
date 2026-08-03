@@ -94,9 +94,10 @@ function seatMap(tripId) {
   const taken = new Map(db.passengers.filter(p => p.tripId === tripId).map(p => [p.seatNumber, p.id]));
   return Array.from({ length: trip?.seatCount || 54 }, (_, index) => {
     const number = index + 1;
-    const isFront = number <= 4;
-    const isTable = [13,14,17,18,21,22,25,26].includes(number);
     const assignedBus = trip?.busId ? db.buses.find(b => b.id === trip.busId) : null;
+    const isDouble = assignedBus?.type === 'double';
+    const isFront = isDouble ? number >= 23 && number <= 26 : number <= 4;
+    const isTable = isDouble ? number >= 1 && number <= 16 : [13,14,17,18,21,22,25,26].includes(number);
     const lowerDeckSeats = assignedBus?.type === 'double' ? 22 : trip?.seatCount;
     return { number, deck: number <= lowerDeckSeats ? 'lower' : 'upper', type: isFront ? 'front' : isTable ? 'table' : 'standard', surcharge: isFront ? 100 : isTable ? 75 : 0, passengerId: taken.get(number) || null };
   });
