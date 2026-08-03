@@ -31,8 +31,9 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Opsamlingssteder, som kun administratoren kan oprette, redigere og slette
 - To chauffører pr. tur, hvor én er primær
 - Administratoren kan skifte turens primære og sekundære chauffør, indtil den første passager er checket ind
-- En salgschef kan tildeles en bestemt tur og håndtere check-in, billetsalg og bagage ved turens startsted
-- Kontantbetalinger ved startstedet registreres hos den tildelte salgschef og indgår i kontantafstemningen
+- Salgschefer kan se alle ture og håndtere check-in, billetsalg og bagage ved den enkelte turs startsted
+- Kontantbetalinger ved startstedet registreres hos den salgschef, som modtog dem, og indgår i personens kontantafstemning
+- Passager- og bagagelister viser, hvem der udførte check-in eller håndtering, hvem der modtog betalingen, og det registrerede beløb
 - Chauffører kan kun åbne ture, de selv er tildelt
 - Passagerregistrering, betalingsstatus og kontant beløb
 - Kontant betaling af både billet og bagage i DKK eller EUR

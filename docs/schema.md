@@ -35,7 +35,7 @@ Den lokale MVP gemmer nedenstående relationelle struktur som JSON. ID-reference
 - `freeTicketReason` (valgfri begrundelse ved gratis billet)
 - `seatNumber`, `seatType`, `seatSurcharge`, `totalPrice`
 - `checkedIn`, `checkedInAt`
-- `checkedInBy`, `attendanceStatus`, `attendanceHistory`
+- `checkedInBy`, `attendanceStatus`, `attendanceHistory` (viser medarbejder og tidspunkt for hver handling)
 
 For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 
@@ -45,7 +45,7 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 - `pickupStopId`, `destinationStopId`
 - `pieces`, `description`, `notes`
 - `paymentStatus`, `paymentCurrency` (`DKK` eller `EUR`), `cashAmount`, `paymentLocation`, `paymentRecordedAt`, `paymentRecordedBy`
-- `status`
+- `status`, `createdAt`, `createdBy`, `statusUpdatedAt`, `statusUpdatedBy`, `baggageHistory`
 
 ### expenses
 
@@ -67,13 +67,13 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 
 - Administratoren kan læse og administrere alle ture.
 - En chauffør kan kun læse en tur, når brugerens ID er `primaryDriverId` eller `secondaryDriverId`.
-- En salgschef kan kun læse turen, når brugerens ID er `salesManagerId`, og kan kun betjene passagerer og bagage ved turens startsted.
+- Salgschefer kan læse alle ture, men kan kun betjene passagerer og bagage ved den enkelte turs startsted.
 - Kun administratoren kan ændre turens chauffører, og kun når ingen passager på turen er checket ind.
 - Kun administratoren kan oprette ture og steder. Den tildelte salgschef kan oprette passagerer og bagage fra turens startsted.
 - Kun administratoren kan redigere/slette opsamlingssteder og ændre bussens sædekapacitet.
 - Kun administratoren kan oprette, redigere og slette busser. En bus, der er tildelt en tur, kan ikke slettes.
 - Kun administratoren kan oprette, redigere og slette chaufførkonti; chauffører oprettes separat, før de kan tildeles en tur. Tildelte chauffører kan ikke slettes.
-- Kun administratoren kan oprette, redigere og slette salgschefkonti. En salgschef, der er tildelt en tur, kan ikke slettes.
+- Kun administratoren kan oprette, redigere og slette salgschefkonti. `salesManagerId` kan fortsat markere den ansvarlige salgschef, men begrænser ikke turoversigten. Konti med registreret handlings- eller betalingshistorik kan ikke slettes.
 - Kun administratoren kan se den samlede salgs- og økonomirapport. DKK og EUR summeres separat uden automatisk valutaomregning.
 - En tildelt chauffør kan udføre check-in og ændre bagagestatus.
 - Administratoren, de tildelte chauffører og turens salgschef kan ændre betaling fra ikke betalt til betalt inden for deres arbejdssted. Betaling kan ikke ændres tilbage til ikke betalt.
