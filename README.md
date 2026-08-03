@@ -55,7 +55,8 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Særskilt, mobilvenlig check-in-tilstand med store trykfelter, fast stopstatus, søgning, hurtigfiltre, store passagerkort, 30 sekunders fortrydelse, hændelseshistorik og offline-kø
 - Kontantansvar pr. chauffør for billet- og bagagebetalinger modtaget i bussen
 - Kontantafstemning pr. chauffør og tur med forventet/afleveret beløb, difference og administratorgodkendelse
-- Turudgifter med upload af PDF- eller billedkvittering, kategori, beløb og valuta
+- Mobilvenlig digital udgiftsmappe per tur med betalingsmetode, betaler, kategori, beløb, DKK/EUR og PDF- eller billedkvittering
+- Udgifter kan gemmes før kvitteringen er klar, men kan først godkendes efter bilaget er tilføjet; private udlæg har særskilt tilbagebetalingsstatus
 - Separat liste over sendt bagage
 - Bagageflow: registreret, modtaget, ombord, udleveret og ikke afhentet
 - Vedvarende lokal database med atomisk lagring

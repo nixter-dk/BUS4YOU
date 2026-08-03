@@ -50,11 +50,12 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 ### expenses
 
 - `id`, `tripId`, `expenseDate` (hentes automatisk fra turens afgang), `category`, `description`
-- `amount`, `currency`
-- `receiptName`, `receiptType`, `receiptFile`
+- `amount`, `currency`, `paymentMethod` (`company_card`, `cash` eller `private`), `paidByUserId`
+- `receiptName`, `receiptType`, `receiptFile` (kan tilføjes efter registreringen)
 - `createdAt`, `createdBy`
 - `status`: `pending`, `approved` eller `rejected`
 - `reviewedAt`, `reviewedBy`, `reviewNote`
+- `reimbursementStatus`, `reimbursedAt`, `reimbursedBy` for private udlæg
 
 ### cashSettlements
 
@@ -78,6 +79,6 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 - En tildelt chauffør kan udføre check-in og ændre bagagestatus.
 - Administratoren, de tildelte chauffører og turens salgschef kan ændre betaling fra ikke betalt til betalt inden for deres arbejdssted. Betaling kan ikke ændres tilbage til ikke betalt.
 - Ved betaling i bussen knyttes kontanterne til chaufføren. Betaling ved startstedet knyttes til den tildelte salgschef.
-- Administratoren og de tildelte chauffører kan registrere turudgifter og uploade en PDF- eller billedkvittering på højst 5 MB.
+- Administratoren og de tildelte chauffører kan registrere turudgifter og uploade en PDF- eller billedkvittering på højst 5 MB. En udgift kan gemmes uden bilag, men kan ikke godkendes, før kvitteringen er tilføjet.
 - Chaufføren og salgschefen kan hver indsende en kontantafstemning for deres tur. Kun administratoren kan godkende eller afvise den, og kontanter flyttes først til kontoret ved godkendelse.
 - Reglerne håndhæves på serveren og er ikke kun skjult i brugerfladen.

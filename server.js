@@ -162,7 +162,7 @@ async function api(req, res, pathname) {
       result[currency] = records.filter(record => record.paymentStatus === 'cash' && (record.paymentCurrency || 'DKK') === currency).reduce((sum,record) => sum + Number(record.cashAmount || 0),0); return result;
     },{});
     const sumExpensesByCurrency = records => ['DKK','EUR'].reduce((result,currency) => { result[currency]=records.filter(record=>record.currency===currency).reduce((sum,record)=>sum+Number(record.amount||0),0); return result; },{});
-    const addTrip = record => { const trip = db.trips.find(t => t.id === record.tripId); return { ...record, tripTitle: trip?.title || 'Ukendt tur', departureAt: trip?.departureAt || null, createdByName: userName(record.createdBy), checkedInByName:userName(record.checkedInBy), paymentRecordedByName:userName(record.paymentRecordedBy), cashHolderUserName:userName(record.cashHolderUserId), statusUpdatedByName:userName(record.statusUpdatedBy), reviewedByName:userName(record.reviewedBy) }; };
+    const addTrip = record => { const trip = db.trips.find(t => t.id === record.tripId); return { ...record, tripTitle: trip?.title || 'Ukendt tur', departureAt: trip?.departureAt || null, createdByName: userName(record.createdBy), paidByName:userName(record.paidByUserId||record.createdBy), checkedInByName:userName(record.checkedInBy), paymentRecordedByName:userName(record.paymentRecordedBy), cashHolderUserName:userName(record.cashHolderUserId), statusUpdatedByName:userName(record.statusUpdatedBy), reviewedByName:userName(record.reviewedBy), reimbursedByName:userName(record.reimbursedBy) }; };
     const cashByDriver = db.users.filter(u => ['driver','sales_manager'].includes(u.role)).map(driver => {
       const held = [...db.passengers,...db.baggage].filter(record => record.paymentStatus === 'cash' && ['bus','departure'].includes(record.paymentLocation) && record.cashHolderUserId === driver.id && !record.cashHandedOverAt);
       return { driverId: driver.id, driverName: driver.name, amounts: sumByCurrency(held), payments: held.length };
@@ -278,15 +278,27 @@ async function api(req, res, pathname) {
   }
   const expenseMatch = pathname.match(/^\/api\/expenses\/(\d+)$/);
   if (expenseMatch && req.method === 'PATCH') {
-    if (user.role !== 'admin') return fail(res,403,'Kun administratoren kan godkende udgifter');
     const expense=db.expenses.find(e=>e.id===Number(expenseMatch[1]));if(!expense)return fail(res,404,'Udgiften findes ikke');
-    const data=await body(req);if(!['approved','rejected'].includes(data.status))return fail(res,400,'Vælg godkendt eller afvist');
+    const data=await body(req);
+    if(data.receiptData){
+      const expenseTrip=db.trips.find(trip=>trip.id===expense.tripId);if(!expenseTrip||!allowedTrip(user,expenseTrip)||user.role==='sales_manager')return fail(res,403,'Du har ikke adgang til udgiften');
+      const receiptType=String(data.receiptType||''),receiptName=path.basename(String(data.receiptName||'kvittering'));if(!['image/jpeg','image/png','image/webp','application/pdf'].includes(receiptType))return fail(res,400,'Kvitteringen skal være PDF, JPG, PNG eller WebP');const encoded=String(data.receiptData).replace(/^data:[^;]+;base64,/,'');const fileData=Buffer.from(encoded,'base64');if(!fileData.length||fileData.length>5*1024*1024)return fail(res,400,'Kvitteringen skal være mellem 1 byte og 5 MB');const extensions={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','application/pdf':'.pdf'},receiptFile=`${crypto.randomBytes(18).toString('hex')}${extensions[receiptType]}`,uploadDir=path.join(__dirname,'data','uploads');fs.mkdirSync(uploadDir,{recursive:true});fs.writeFileSync(path.join(uploadDir,receiptFile),fileData);expense.receiptType=receiptType;expense.receiptName=receiptName;expense.receiptFile=receiptFile;saveDb();return json(res,200,{...expense,createdByName:userName(expense.createdBy),paidByName:userName(expense.paidByUserId||expense.createdBy),reviewedByName:userName(expense.reviewedBy)});
+    }
+    if (user.role !== 'admin') return fail(res,403,'Kun administratoren kan godkende udgifter');
+    if(data.reimbursementStatus==='paid'){
+      if((expense.paymentMethod||'cash')!=='private')return fail(res,409,'Kun private udlæg kan tilbagebetales');
+      if(expense.status!=='approved')return fail(res,409,'Udlægget skal godkendes før tilbagebetaling');
+      if(expense.reimbursementStatus==='paid')return fail(res,409,'Udlægget er allerede tilbagebetalt');
+      expense.reimbursementStatus='paid';expense.reimbursedAt=new Date().toISOString();expense.reimbursedBy=user.id;saveDb();return json(res,200,{...expense,createdByName:userName(expense.createdBy),paidByName:userName(expense.paidByUserId||expense.createdBy),reviewedByName:userName(expense.reviewedBy),reimbursedByName:user.name});
+    }
+    if(!['approved','rejected'].includes(data.status))return fail(res,400,'Vælg godkendt eller afvist');
     if(expense.status!=='pending')return fail(res,409,'Udgiften er allerede behandlet');
-    expense.status=data.status;expense.reviewedAt=new Date().toISOString();expense.reviewedBy=user.id;expense.reviewNote=String(data.reviewNote||'').trim();saveDb();return json(res,200,{...expense,createdByName:db.users.find(u=>u.id===expense.createdBy)?.name||'Ukendt',reviewedByName:user.name});
+    if(data.status==='approved'&&!expense.receiptFile)return fail(res,409,'Tilføj en kvittering før udgiften godkendes');
+    expense.status=data.status;expense.reviewedAt=new Date().toISOString();expense.reviewedBy=user.id;expense.reviewNote=String(data.reviewNote||'').trim();saveDb();return json(res,200,{...expense,createdByName:userName(expense.createdBy),paidByName:userName(expense.paidByUserId||expense.createdBy),reviewedByName:user.name});
   }
   const receiptMatch = pathname.match(/^\/api\/expenses\/(\d+)\/receipt$/);
   if (receiptMatch && req.method === 'GET') {
-    const expense = db.expenses.find(e => e.id === Number(receiptMatch[1])); if (!expense) return fail(res, 404, 'Kvitteringen findes ikke');
+    const expense = db.expenses.find(e => e.id === Number(receiptMatch[1])); if (!expense || !expense.receiptFile) return fail(res, 404, 'Kvitteringen findes ikke');
     const expenseTrip = db.trips.find(t => t.id === expense.tripId); if (!expenseTrip || !allowedTrip(user,expenseTrip)) return fail(res, 403, 'Du har ikke adgang til kvitteringen');
     if(user.role==='sales_manager')return fail(res,403,'Salgschefen har ikke adgang til turudgifter');
     const file = path.join(__dirname,'data','uploads',expense.receiptFile); if (!fs.existsSync(file)) return fail(res, 404, 'Kvitteringsfilen findes ikke');
@@ -337,7 +349,7 @@ async function api(req, res, pathname) {
   if (!part && req.method === 'GET') {
     const startOnly=record=>user.role!=='sales_manager'||record.pickupStopId===trip.originId;
     const settlements=db.cashSettlements.filter(settlement=>settlement.tripId===trip.id&&(user.role!=='sales_manager'||settlement.driverId===user.id)).map(settlement=>({...settlement,driverName:db.users.find(candidate=>candidate.id===settlement.driverId)?.name||'Ukendt',submittedByName:db.users.find(candidate=>candidate.id===settlement.submittedBy)?.name||'Ukendt',reviewedByName:settlement.reviewedBy?db.users.find(candidate=>candidate.id===settlement.reviewedBy)?.name||'Ukendt':null}));
-    const expenses=user.role==='sales_manager'?[]:db.expenses.filter(expense=>expense.tripId===trip.id).map(expense=>({...expense,createdByName:db.users.find(candidate=>candidate.id===expense.createdBy)?.name||'Ukendt',reviewedByName:expense.reviewedBy?db.users.find(candidate=>candidate.id===expense.reviewedBy)?.name||'Ukendt':null}));
+    const expenses=user.role==='sales_manager'?[]:db.expenses.filter(expense=>expense.tripId===trip.id).map(expense=>({...expense,createdByName:userName(expense.createdBy),paidByName:userName(expense.paidByUserId||expense.createdBy),reviewedByName:userName(expense.reviewedBy),reimbursedByName:userName(expense.reimbursedBy)}));
     return json(res,200,{trip:tripView(trip),passengers:db.passengers.filter(passenger=>passenger.tripId===trip.id&&startOnly(passenger)).map(passengerRecordView),baggage:db.baggage.filter(item=>item.tripId===trip.id&&startOnly(item)).map(baggageRecordView),expenses,settlements,seats:seatMap(trip.id)});
   }
   if (part === 'seats' && req.method === 'GET') return json(res, 200, seatMap(trip.id));
@@ -415,14 +427,12 @@ async function api(req, res, pathname) {
     if(user.role==='sales_manager')return fail(res,403,'Salgschefen kan ikke registrere turudgifter');
     const data = await body(req); const amount = Number(data.amount); const currency = ['DKK','EUR'].includes(data.currency) ? data.currency : null; const category = String(data.category || '').trim();
     if (!(amount > 0) || !currency || !category) return fail(res, 400, 'Angiv kategori, beløb og valuta');
-    const receiptType = String(data.receiptType || ''); const receiptName = path.basename(String(data.receiptName || 'kvittering'));
-    if (!['image/jpeg','image/png','image/webp','application/pdf'].includes(receiptType)) return fail(res, 400, 'Kvitteringen skal være PDF, JPG, PNG eller WebP');
-    const encoded = String(data.receiptData || '').replace(/^data:[^;]+;base64,/,''); const fileData = Buffer.from(encoded,'base64');
-    if (!fileData.length || fileData.length > 5 * 1024 * 1024) return fail(res, 400, 'Kvitteringen skal være mellem 1 byte og 5 MB');
-    const extensions = { 'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','application/pdf':'.pdf' }; const receiptFile = `${crypto.randomBytes(18).toString('hex')}${extensions[receiptType]}`;
-    const uploadDir = path.join(__dirname,'data','uploads'); fs.mkdirSync(uploadDir,{recursive:true}); fs.writeFileSync(path.join(uploadDir,receiptFile),fileData);
-    const expense = { id:id(),tripId:trip.id,expenseDate:trip.departureAt,category,description:String(data.description||'').trim(),amount,currency,receiptName,receiptType,receiptFile,createdAt:new Date().toISOString(),createdBy:user.id,status:'pending',reviewedAt:null,reviewedBy:null,reviewNote:'' };
-    db.expenses.push(expense); saveDb(); return json(res,201,{...expense,createdByName:user.name});
+    const paymentMethod=['company_card','cash','private'].includes(data.paymentMethod)?data.paymentMethod:'cash';
+    const allowedPayers=[user.id,trip.primaryDriverId,trip.secondaryDriverId].filter(Boolean),paidByUserId=user.role==='admin'&&allowedPayers.includes(Number(data.paidByUserId))?Number(data.paidByUserId):user.id;
+    let receiptType=null,receiptName=null,receiptFile=null;
+    if(data.receiptData){receiptType=String(data.receiptType||'');receiptName=path.basename(String(data.receiptName||'kvittering'));if(!['image/jpeg','image/png','image/webp','application/pdf'].includes(receiptType))return fail(res,400,'Kvitteringen skal være PDF, JPG, PNG eller WebP');const encoded=String(data.receiptData).replace(/^data:[^;]+;base64,/,'');const fileData=Buffer.from(encoded,'base64');if(!fileData.length||fileData.length>5*1024*1024)return fail(res,400,'Kvitteringen skal være mellem 1 byte og 5 MB');const extensions={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','application/pdf':'.pdf'};receiptFile=`${crypto.randomBytes(18).toString('hex')}${extensions[receiptType]}`;const uploadDir=path.join(__dirname,'data','uploads');fs.mkdirSync(uploadDir,{recursive:true});fs.writeFileSync(path.join(uploadDir,receiptFile),fileData);}
+    const expense = { id:id(),tripId:trip.id,expenseDate:trip.departureAt,category,description:String(data.description||'').trim(),amount,currency,paymentMethod,paidByUserId,receiptName,receiptType,receiptFile,createdAt:new Date().toISOString(),createdBy:user.id,status:'pending',reviewedAt:null,reviewedBy:null,reviewNote:'',reimbursementStatus:paymentMethod==='private'?'pending':'not_applicable',reimbursedAt:null,reimbursedBy:null };
+    db.expenses.push(expense); saveDb(); return json(res,201,{...expense,createdByName:user.name,paidByName:userName(paidByUserId)});
   }
   if (part === 'settlements' && req.method === 'POST') {
     const data = await body(req); const driverId = ['driver','sales_manager'].includes(user.role) ? user.id : Number(data.driverId);
