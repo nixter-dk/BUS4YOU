@@ -471,3 +471,49 @@ renderCheckInMode=function(){
   $$('#tabContent [data-checkin-filter]').forEach(button=>button.onclick=()=>{state.checkInListFilter=button.dataset.checkinFilter;applyFilters();sections.scrollIntoView({behavior:'smooth',block:'start'})});
   applyFilters();
 };
+
+// Advanced per-trip cash flow: ticket cash, baggage cash, expenses and custody.
+const reportsBeforeAdvancedTripCash=renderReports;
+renderReports=async function(){
+  await reportsBeforeAdvancedTripCash();
+  if(!$('.nav[data-view="reports"]')?.classList.contains('active'))return;
+  try{
+    const report=await api('/api/reports'),control=$('.economy-control');
+    if(!control)return;
+    control.insertAdjacentHTML('afterend','<section class="advanced-trip-economy" id="advancedTripEconomy"></section>');
+    const refresh=()=>renderAdvancedTripEconomy(report);
+    ['#economyFrom','#economyTo','#economyTrip','#economyCurrency'].forEach(selector=>$(selector)?.addEventListener('change',refresh));
+    $('#resetEconomy')?.addEventListener('click',()=>setTimeout(refresh));
+    refresh();
+  }catch(error){toast(error.message)}
+};
+
+function economyAmount(rows,path){
+  return ['DKK','EUR'].reduce((totals,currency)=>{totals[currency]=rows.reduce((sum,row)=>{let value=row;for(const key of path.split('.'))value=value?.[key];return sum+Number(value?.[currency]||0)},0);return totals},{});
+}
+function economyValues(amounts,currency,strong=false){
+  const currencies=currency==='all'?['DKK','EUR']:[currency];
+  return currencies.map(code=>`<span class="currency-value ${code.toLowerCase()}">${strong?'<strong>':''}${money(amounts?.[code]||0,code)}${strong?'</strong>':''}</span>`).join('');
+}
+function cashStage(label,amounts,currency,kind,note){return`<div class="cash-stage ${kind}"><span>${label}</span>${economyValues(amounts,currency,true)}<small>${note}</small></div>`}
+function renderAdvancedTripEconomy(report){
+  const host=$('#advancedTripEconomy');if(!host)return;
+  const rows=filteredTripResults(report),currency=$('#economyCurrency').value;
+  const ticket=economyAmount(rows,'ticketRevenue'),baggage=economyAmount(rows,'baggageRevenue'),expenses=economyAmount(rows,'approvedExpenses'),net=economyAmount(rows,'net'),shop=economyAmount(rows,'cashFlow.shop'),handed=economyAmount(rows,'cashFlow.handedOver'),held=economyAmount(rows,'cashFlow.held');
+  const totals={DKK:ticket.DKK+baggage.DKK,EUR:ticket.EUR+baggage.EUR};
+  const discrepancy={DKK:totals.DKK-shop.DKK-handed.DKK-held.DKK,EUR:totals.EUR-shop.EUR-handed.EUR-held.EUR},hasDiscrepancy=Math.abs(discrepancy.DKK)>.001||Math.abs(discrepancy.EUR)>.001;
+  const currencies=currency==='all'?['DKK','EUR']:[currency];
+  const mix=currencies.map(code=>{const total=totals[code]||0,ticketPct=total?Math.round(ticket[code]/total*100):0,baggagePct=total?100-ticketPct:0;return`<div class="revenue-mix-row"><strong>${code}</strong><div class="revenue-mix-bar"><i style="width:${ticketPct}%"></i><b style="width:${baggagePct}%"></b></div><span>Billetter ${ticketPct}%</span><span>Bagage ${baggagePct}%</span></div>`}).join('');
+  const holders=new Map();rows.flatMap(row=>row.cashFlow?.byHolder||[]).forEach(holder=>{const current=holders.get(holder.userName)||{name:holder.userName,payments:0,DKK:0,EUR:0};current.payments+=holder.payments;current.DKK+=holder.amounts.DKK;current.EUR+=holder.amounts.EUR;holders.set(holder.userName,current)});
+  host.innerHTML=`<header class="advanced-economy-head"><div><small>AVANCERET TURANALYSE</small><h2>Hvor kommer pengene fra – og hvor står de?</h2><p>${rows.length===1?'Viser den valgte tur':`Samlet visning for ${rows.length} ture`}</p></div><span>${currency==='all'?'DKK og EUR':currency}</span></header>${hasDiscrepancy?`<div class="economy-discrepancy"><strong>Kontroladvarsel</strong><span>Registreret salg stemmer ikke med placeringen af kontanterne: ${economyValues(discrepancy,currency,true)}</span></div>`:''}
+    <div class="advanced-kpis"><div class="ticket-kpi"><small>Kontanter fra billetter</small>${economyValues(ticket,currency,true)}<em>${rows.reduce((sum,row)=>sum+row.paidTickets,0)} betalte billetter</em></div><div class="baggage-kpi"><small>Kontanter fra bagage</small>${economyValues(baggage,currency,true)}<em>${rows.reduce((sum,row)=>sum+row.paidBaggage,0)} betalte forsendelser</em></div><div class="expense-kpi"><small>Godkendte udgifter</small>${economyValues(expenses,currency,true)}<em>${rows.reduce((sum,row)=>sum+(row.expenseCategories||[]).length,0)} udgiftskategorier</em></div><div class="net-kpi ${currencies.some(code=>net[code]<0)?'negative':'positive'}"><small>Nettoresultat</small>${economyValues(net,currency,true)}<em>Omsætning minus godkendte udgifter</em></div></div>
+    <div class="advanced-economy-grid"><section class="cash-flow-panel"><h3>Kontanternes placering</h3><div class="cash-flow-line">${cashStage('Registreret i salgsbutikken',shop,currency,'shop','Allerede hos kontoret')}${cashStage('Afleveret og godkendt',handed,currency,'office','Afstemt fra personale')}${cashStage('Står stadig hos personale',held,currency,'held','Skal kontantafstemmes')}</div>${holders.size?`<div class="cash-holder-breakdown"><strong>Uafleveret per medarbejder</strong>${[...holders.values()].map(holder=>`<div><span>${esc(holder.name)}<small>${holder.payments} betalinger</small></span>${economyValues(holder,currency,true)}</div>`).join('')}</div>`:'<p class="all-settled">✓ Ingen uafleverede kontanter i den valgte visning</p>'}</section><section class="revenue-mix"><h3>Fordeling af kontantsalg</h3>${mix}<div class="mix-total"><span>Samlet kontantsalg</span>${economyValues(totals,currency,true)}</div></section></div>
+    <section class="trip-economy-list"><header><h3>Detaljer per tur</h3><span>${rows.length} ture</span></header>${rows.length?rows.map((row,index)=>tripEconomyDetail(row,currency,rows.length===1||index===0)).join(''):'<div class="empty">Ingen ture matcher de valgte filtre</div>'}</section>`;
+}
+function tripEconomyDetail(row,currency,open){
+  const currencies=currency==='all'?['DKK','EUR']:[currency],negative=currencies.some(code=>row.net[code]<0),settlementText=row.cashFlow.held.DKK||row.cashFlow.held.EUR?'Kontanter mangler afstemning':'Kontanter afstemt';
+  const categories=(row.expenseCategories||[]).map(item=>`<div><span>${esc(item.category)}</span>${economyValues(item.approved,currency,true)}${(item.pending.DKK||item.pending.EUR)?`<small>Afventer: ${currencies.map(code=>money(item.pending[code],code)).join(' · ')}</small>`:''}</div>`).join('')||'<p>Ingen udgifter på turen</p>';
+  return`<details class="trip-economy-detail" ${open?'open':''}><summary><div><strong>${esc(row.title)}</strong><small>${date(row.departureAt)} · ${esc(row.busName)}</small></div><span class="trip-cash-status ${row.cashFlow.held.DKK||row.cashFlow.held.EUR?'attention':'done'}">${settlementText}</span><div class="trip-net ${negative?'negative':'positive'}"><small>Netto</small>${economyValues(row.net,currency,true)}</div><b>⌄</b></summary><div class="trip-economy-body"><div class="trip-money-grid"><div><span>Billetter</span>${economyValues(row.ticketRevenue,currency,true)}<small>${row.paidTickets} betalt · ${row.freeTickets} gratis · ${row.unpaid} ubetalt</small></div><div><span>Bagage</span>${economyValues(row.baggageRevenue,currency,true)}<small>${row.paidBaggage} betalt · ${row.unpaidBaggage} ubetalt</small></div><div><span>Godkendte udgifter</span>${economyValues(row.approvedExpenses,currency,true)}</div><div class="${negative?'negative':'positive'}"><span>Nettoresultat</span>${economyValues(row.net,currency,true)}</div></div><div class="trip-cash-chain">${cashStage('Salgsbutik',row.cashFlow.shop,currency,'shop','Direkte hos kontoret')}${cashStage('Afleveret',row.cashFlow.handedOver,currency,'office',`${row.settlements.approved} godkendte afstemninger`)}${cashStage('Hos personale',row.cashFlow.held,currency,'held',`${row.settlements.pending} afstemninger afventer`)}</div><div class="expense-category-list"><h4>Udgifter efter kategori</h4>${categories}</div></div></details>`
+}
+
+exportEconomyCsv=function(rows){const header=['Tur','Dato','Bus','Passagerer','Kapacitet','Belægning %','Billetter DKK','Billetter EUR','Bagage DKK','Bagage EUR','Salgsbutik DKK','Salgsbutik EUR','Afleveret DKK','Afleveret EUR','Hos personale DKK','Hos personale EUR','Godkendte udgifter DKK','Godkendte udgifter EUR','Afventende udgifter DKK','Afventende udgifter EUR','Netto DKK','Netto EUR'],data=rows.map(r=>[r.title,r.departureAt,r.busName,r.passengers,r.seatCount,r.occupancy,r.ticketRevenue.DKK,r.ticketRevenue.EUR,r.baggageRevenue.DKK,r.baggageRevenue.EUR,r.cashFlow.shop.DKK,r.cashFlow.shop.EUR,r.cashFlow.handedOver.DKK,r.cashFlow.handedOver.EUR,r.cashFlow.held.DKK,r.cashFlow.held.EUR,r.approvedExpenses.DKK,r.approvedExpenses.EUR,r.pendingExpenses.DKK,r.pendingExpenses.EUR,r.net.DKK,r.net.EUR]),csv=[header,...data].map(row=>row.map(value=>`"${String(value).replace(/"/g,'""')}"`).join(';')).join('\r\n'),blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='avanceret-turoekonomi.csv';link.click();URL.revokeObjectURL(url)};
