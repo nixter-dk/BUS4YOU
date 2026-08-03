@@ -77,6 +77,7 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 - Kun administratoren kan oprette, redigere og slette chaufførkonti; chauffører oprettes separat, før de kan tildeles en tur. Tildelte chauffører kan ikke slettes.
 - Kun administratoren kan oprette, redigere og slette salgschefkonti. `salesManagerId` kan fortsat markere den ansvarlige salgschef, men begrænser ikke turoversigten. Konti med registreret handlings- eller betalingshistorik kan ikke slettes.
 - Kun administratoren kan se den samlede salgs- og økonomirapport. DKK og EUR summeres separat uden automatisk valutaomregning.
+- Overblikssiden returnerer kun ture, opgaver og kontantansvar, som den aktuelle rolle har adgang til; administratoren ser den samlede drift.
 - En tildelt chauffør kan udføre check-in og ændre bagagestatus.
 - Administratoren, de tildelte chauffører og turens salgschef kan ændre betaling fra ikke betalt til betalt inden for deres arbejdssted. Betaling kan ikke ændres tilbage til ikke betalt.
 - Ved betaling i bussen knyttes kontanterne til chaufføren. Betaling ved startstedet knyttes til den tildelte salgschef.
