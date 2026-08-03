@@ -44,6 +44,7 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Klikbar dobbeltdækker-plantegning med etager, to bordgrupper på underetagen, førerplads, indgang, trapper, køkken og toilet
 - Frontsæder (+100 kr.) og bordpladser (+75 kr.)
 - Check-in fra passagerlisten
+- Gratis billetter med valgfri begrundelse; de tæller med i belægningen, men ikke som indtægt eller ubetalt
 - Administrator og tildelte chauffører kan registrere ubetalte billetter og bagage som betalt i bus eller salgsbutik; betalingen kan ikke føres tilbage til ubetalt
 - Chaufførvenlig passagerliste med søgning, filtre, opsamlingsgrupper, status, udeblevet-markering, opkald og passagerdetaljer
 - Særskilt check-in-tilstand med store passagerkort, stopfremdrift, problemoversigt, 30 sekunders fortrydelse, hændelseshistorik og offline-kø

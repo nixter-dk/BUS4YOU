@@ -31,7 +31,8 @@ Den lokale MVP gemmer nedenstående relationelle struktur som JSON. ID-reference
 
 - `id`, `tripId`, `name`, `phone`
 - `pickupStopId`, `destinationStopId`
-- `paymentStatus`, `paymentCurrency` (`DKK` eller `EUR`), `cashAmount`, `paymentLocation`, `paymentRecordedAt`, `paymentRecordedBy`
+- `paymentStatus` (`unpaid`, `cash` eller `free`), `paymentCurrency` (`DKK` eller `EUR`), `cashAmount`, `paymentLocation`, `paymentRecordedAt`, `paymentRecordedBy`
+- `freeTicketReason` (valgfri begrundelse ved gratis billet)
 - `seatNumber`, `seatType`, `seatSurcharge`, `totalPrice`
 - `checkedIn`, `checkedInAt`
 - `checkedInBy`, `attendanceStatus`, `attendanceHistory`
