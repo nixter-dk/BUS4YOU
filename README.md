@@ -51,7 +51,7 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Gratis billetter med valgfri begrundelse; de tæller med i belægningen, men ikke som indtægt eller ubetalt
 - Administrator og tildelte chauffører kan registrere ubetalte billetter og bagage som betalt i bus eller salgsbutik; betalingen kan ikke føres tilbage til ubetalt
 - Chaufførvenlig passagerliste med søgning, filtre, opsamlingsgrupper, status, udeblevet-markering, opkald og passagerdetaljer
-- Særskilt check-in-tilstand med store passagerkort, stopfremdrift, problemoversigt, 30 sekunders fortrydelse, hændelseshistorik og offline-kø
+- Særskilt, mobilvenlig check-in-tilstand med store trykfelter, fast stopstatus, søgning, hurtigfiltre, store passagerkort, 30 sekunders fortrydelse, hændelseshistorik og offline-kø
 - Kontantansvar pr. chauffør for billet- og bagagebetalinger modtaget i bussen
 - Kontantafstemning pr. chauffør og tur med forventet/afleveret beløb, difference og administratorgodkendelse
 - Turudgifter med upload af PDF- eller billedkvittering, kategori, beløb og valuta

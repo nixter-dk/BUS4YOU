@@ -403,3 +403,71 @@ tripCashCards=function(){const trip=state.trip.trip,records=[...state.trip.passe
 renderSettlementTab=function(){const trip=state.trip.trip,all=state.trip.settlements||[],records=[...state.trip.passengers,...state.trip.baggage],holderIds=records.filter(record=>record.cashHolderUserId&&!record.cashHandedOverAt).map(record=>record.cashHolderUserId),staffIds=[...new Set([trip.primaryDriverId,trip.secondaryDriverId,trip.salesManagerId,...holderIds].filter(Boolean))],visibleIds=state.user.role==='admin'?staffIds:[state.user.id];$('#tabContent').innerHTML=`<div class="settlement-intro"><div><small>KONTANTAFSTEMNING</small><h2>Aflevering fra personale til kontor</h2><p>Betalinger modtaget i bussen og ved startstedet afstemmes separat i DKK og EUR.</p></div><span>${esc(trip.title)}<b>${date(trip.departureAt)}</b></span></div><div class="settlement-drivers">${visibleIds.map(staffId=>settlementDriverCard(staffId,all)).join('')}</div><section class="panel settlement-history"><div class="panel-head"><h2>Afstemningshistorik</h2><small>${all.length} afstemninger</small></div>${all.length?`<div class="table-scroll"><table class="list"><thead><tr><th>Medarbejder</th><th>Forventet</th><th>Afleveret</th><th>Difference</th><th>Status</th><th>Behandling</th></tr></thead><tbody>${[...all].reverse().map(settlementRow).join('')}</tbody></table></div>`:'<div class="empty">Ingen kontantafstemninger endnu</div>'}</section>`;wireSettlementTab()};
 
 bagStatus=async function(id,status){try{const baggage=await api(`/api/trips/${state.trip.trip.id}/baggage`,{method:'PATCH',body:JSON.stringify({id,status})});Object.assign(state.trip.baggage.find(item=>item.id===id),baggage);toast('Status er opdateret');renderTrip()}catch(error){toast(error.message)}};
+
+// Mobile-first check-in cards. Secondary actions stay close, but out of the way.
+checkinCard=function(p){
+  const paymentClass=p.paymentStatus==='free'?'free':p.paymentStatus==='cash'?'paid':'unpaid';
+  const paymentTitle=p.paymentStatus==='free'?'Gratis billet':p.paymentStatus==='cash'?'Betalt':'Ikke betalt';
+  const paymentValue=p.paymentStatus==='free'?(p.freeTicketReason||'Ingen betaling'):p.paymentStatus==='cash'?money(p.cashAmount,p.paymentCurrency||'DKK'):'Betaling mangler';
+  const attendance=p.checkedIn?'checked':p.attendanceStatus==='no_show'?'noshow':'pending';
+  return `<article class="checkin-card ${p.checkedIn?'is-checked':''} ${p.attendanceStatus==='no_show'?'is-noshow':''}" data-checkin-card="${p.id}" data-checkin-state="${attendance}" data-payment-state="${p.paymentStatus}" data-search="${esc(`${p.name} ${p.phone} ${p.seatNumber} ${stopName(p.pickupStopId)} ${stopName(p.destinationStopId)}`.toLowerCase())}">
+    <div class="checkin-seat"><small>SÆDE</small><strong>${p.seatNumber}</strong></div>
+    <div class="checkin-person"><h3>${esc(p.name)}</h3><a href="tel:${esc(p.phone)}">${esc(p.phone)}</a><span>${esc(stopName(p.pickupStopId))} → ${esc(stopName(p.destinationStopId))}</span>${p.pendingSync?'<em>Afventer synkronisering</em>':''}</div>
+    <div class="checkin-payment ${paymentClass}"><small>${paymentTitle}</small><strong>${esc(paymentValue)}</strong></div>
+    <div class="checkin-actions">
+      ${p.paymentStatus==='unpaid'?`<button class="pay-button" data-pay-passenger="${p.id}">Betal billet</button>`:''}
+      ${!p.checkedIn?`<button class="check-button" data-fast-check="${p.id}">✓ Check ind</button>`:'<span class="checked-label">✓ Checket ind</span>'}
+      <a href="tel:${esc(p.phone)}" class="icon-action checkin-call" title="Ring" aria-label="Ring til ${esc(p.name)}">☎</a>
+      <details class="checkin-more"><summary aria-label="Flere handlinger">•••</summary><div>
+        ${!p.checkedIn&&p.attendanceStatus!=='no_show'?`<button data-no-show="${p.id}">Marker udeblevet</button>`:''}
+        <button data-passenger-detail="${p.id}">Se alle detaljer</button>
+      </div></details>
+    </div>
+  </article>`
+};
+
+// Combined search and one-touch filters make long passenger lists manageable.
+const checkInModeBeforeMobileWorkspace=renderCheckInMode;
+renderCheckInMode=function(){
+  checkInModeBeforeMobileWorkspace();
+  const search=$('#checkinSearch'),sections=$('.checkin-sections');
+  if(!search||!sections)return;
+  const cards=$$('[data-checkin-card]');
+  const counts={
+    all:cards.length,
+    pending:cards.filter(card=>card.dataset.checkinState==='pending').length,
+    unpaid:cards.filter(card=>card.dataset.paymentState==='unpaid').length,
+    checked:cards.filter(card=>card.dataset.checkinState==='checked').length
+  };
+  if(!['all','pending','unpaid','checked'].includes(state.checkInListFilter))state.checkInListFilter='pending';
+  const tools=document.createElement('div');
+  tools.className='checkin-mobile-tools';
+  tools.innerHTML=`<div class="checkin-filter-label"><strong>Vis passagerer</strong><span id="checkinVisibleCount"></span></div><div class="checkin-filter-chips" role="group" aria-label="Filtrer check-in-listen">
+    <button data-checkin-filter="pending">Afventer <b>${counts.pending}</b></button>
+    <button data-checkin-filter="unpaid">Ikke betalt <b>${counts.unpaid}</b></button>
+    <button data-checkin-filter="checked">Checket ind <b>${counts.checked}</b></button>
+    <button data-checkin-filter="all">Alle <b>${counts.all}</b></button>
+  </div>`;
+  search.closest('.checkin-search').insertAdjacentElement('afterend',tools);
+  const applyFilters=()=>{
+    const query=search.value.trim().toLowerCase();
+    let visible=0;
+    cards.forEach(card=>{
+      const matchesText=!query||card.dataset.search.includes(query);
+      const filter=state.checkInListFilter;
+      const matchesFilter=filter==='all'||filter==='pending'&&card.dataset.checkinState==='pending'||filter==='unpaid'&&card.dataset.paymentState==='unpaid'||filter==='checked'&&card.dataset.checkinState==='checked';
+      card.hidden=!(matchesText&&matchesFilter);
+      if(!card.hidden)visible++;
+    });
+    $$('.checkin-group').forEach(group=>{
+      const groupCards=[...group.querySelectorAll('[data-checkin-card]')],shown=groupCards.filter(card=>!card.hidden).length;
+      group.hidden=shown===0;
+      const badge=group.querySelector('header span');if(badge)badge.textContent=shown;
+    });
+    $$('#tabContent [data-checkin-filter]').forEach(button=>{const active=button.dataset.checkinFilter===state.checkInListFilter;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active))});
+    const result=$('#checkinVisibleCount');if(result)result.textContent=`${visible} vist`;
+  };
+  search.oninput=applyFilters;
+  $$('#tabContent [data-checkin-filter]').forEach(button=>button.onclick=()=>{state.checkInListFilter=button.dataset.checkinFilter;applyFilters();sections.scrollIntoView({behavior:'smooth',block:'start'})});
+  applyFilters();
+};
