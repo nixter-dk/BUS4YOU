@@ -25,12 +25,14 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 ## MVP-funktioner
 
 - Login med sikre, saltede `scrypt`-password-hashes og HTTP-only sessionscookies
-- Roller: administrator og chauffør
+- Roller: administrator, chauffør og salgschef
 - Separat chaufføradministration, hvor kun administratoren kan oprette, redigere og slette chaufførkonti
 - Kalender og turdashboard
 - Opsamlingssteder, som kun administratoren kan oprette, redigere og slette
 - To chauffører pr. tur, hvor én er primær
 - Administratoren kan skifte turens primære og sekundære chauffør, indtil den første passager er checket ind
+- En salgschef kan tildeles en bestemt tur og håndtere check-in, billetsalg og bagage ved turens startsted
+- Kontantbetalinger ved startstedet registreres hos den tildelte salgschef og indgår i kontantafstemningen
 - Chauffører kan kun åbne ture, de selv er tildelt
 - Passagerregistrering, betalingsstatus og kontant beløb
 - Kontant betaling af både billet og bagage i DKK eller EUR
