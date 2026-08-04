@@ -70,9 +70,9 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 
 - Administratoren kan læse og administrere alle ture.
 - En tur kan kun bruge et sted med navnet `København` eller `Tetovo` som `originId`. Andre oprettede steder kan fortsat bruges som opsamlingssted og destination.
-- `passengers.pickupStopId` er uafhængig af turens `originId`. Administratoren og de tildelte chauffører kan vælge alle oprettede steder; salgschefen er fortsat begrænset til turens startsted.
+- `passengers.pickupStopId` er uafhængig af turens `originId`. Administratoren og de tildelte chauffører kan vælge alle oprettede steder. Salgschefens nye billetsalg er begrænset til startstedet, mens check-in kan udføres ved alle stop med passagerer.
 - En chauffør kan kun læse en tur, når brugerens ID er `primaryDriverId` eller `secondaryDriverId`.
-- Salgschefer kan læse alle ture, men kan kun betjene passagerer og bagage ved den enkelte turs startsted.
+- Salgschefer kan læse alle ture og udføre check-in ved alle opsamlingssteder, som har passagerer på turen. Billetsalg, billetbetaling og bagage er fortsat begrænset til turens startsted.
 - Kun administratoren kan ændre turens chauffører, og kun når ingen passager på turen er checket ind.
 - Kun administratoren kan annullere en tur. Begrundelse, tidspunkt og administrator gemmes, og turens historik bevares.
 - Kun en tur uden passagerer, bagage, udgifter og kontantafstemninger kan slettes permanent. Ellers skal turen annulleres.

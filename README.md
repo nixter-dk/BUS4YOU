@@ -36,7 +36,7 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Administratoren kan skifte turens primære og sekundære chauffør, indtil den første passager er checket ind
 - Administratoren kan annullere en tur med obligatorisk begrundelse; al historik, økonomi, passagerer og bagage bevares
 - En tom tur kan slettes permanent af administratoren, men sletning låses automatisk, så snart turen har passagerer, bagage, udgifter eller kontantafstemninger
-- Salgschefer kan se alle ture og håndtere check-in, billetsalg og bagage ved den enkelte turs startsted
+- Salgschefer kan se alle ture og checke passagerer ind ved alle opsamlingssteder, hvor turen har gæster; billetsalg og bagage forbliver ved turens startsted
 - Kontantbetalinger ved startstedet registreres hos den salgschef, som modtog dem, og indgår i personens kontantafstemning
 - Passager- og bagagelister viser, hvem der udførte check-in eller håndtering, hvem der modtog betalingen, og det registrerede beløb
 - Chauffører kan kun åbne ture, de selv er tildelt

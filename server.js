@@ -356,7 +356,7 @@ async function api(req, res, pathname) {
     if (trip.status === 'cancelled') return fail(res,409,'Turen er annulleret og kan ikke ændres');
     if (data.completedStopId) {
       const stopId = Number(data.completedStopId); if (!db.stops.some(s => s.id === stopId)) return fail(res,400,'Opsamlingsstedet findes ikke');
-      if(user.role==='sales_manager'&&stopId!==trip.originId)return fail(res,403,'Salgschefen kan kun afslutte turens startsted');
+      if(user.role==='sales_manager'&&!db.passengers.some(passenger=>passenger.tripId===trip.id&&passenger.pickupStopId===stopId))return fail(res,403,'Salgschefen kan kun afslutte stoppesteder med passagerer på turen');
       trip.completedStopIds = trip.completedStopIds || []; if (!trip.completedStopIds.includes(stopId)) trip.completedStopIds.push(stopId); saveDb(); return json(res,200,tripView(trip));
     }
     if (Object.prototype.hasOwnProperty.call(data,'salesManagerId')) {
@@ -393,7 +393,7 @@ async function api(req, res, pathname) {
     const startOnly=record=>user.role!=='sales_manager'||record.pickupStopId===trip.originId;
     const settlements=db.cashSettlements.filter(settlement=>settlement.tripId===trip.id&&(user.role!=='sales_manager'||settlement.driverId===user.id)).map(settlement=>({...settlement,driverName:db.users.find(candidate=>candidate.id===settlement.driverId)?.name||'Ukendt',submittedByName:db.users.find(candidate=>candidate.id===settlement.submittedBy)?.name||'Ukendt',reviewedByName:settlement.reviewedBy?db.users.find(candidate=>candidate.id===settlement.reviewedBy)?.name||'Ukendt':null}));
     const expenses=user.role==='sales_manager'?[]:db.expenses.filter(expense=>expense.tripId===trip.id).map(expense=>({...expense,createdByName:userName(expense.createdBy),paidByName:userName(expense.paidByUserId||expense.createdBy),reviewedByName:userName(expense.reviewedBy),reimbursedByName:userName(expense.reimbursedBy)}));
-    return json(res,200,{trip:tripView(trip),passengers:db.passengers.filter(passenger=>passenger.tripId===trip.id&&startOnly(passenger)).map(passengerRecordView),baggage:db.baggage.filter(item=>item.tripId===trip.id&&startOnly(item)).map(baggageRecordView),expenses,settlements,seats:seatMap(trip.id)});
+    return json(res,200,{trip:tripView(trip),passengers:db.passengers.filter(passenger=>passenger.tripId===trip.id).map(passengerRecordView),baggage:db.baggage.filter(item=>item.tripId===trip.id&&startOnly(item)).map(baggageRecordView),expenses,settlements,seats:seatMap(trip.id)});
   }
   if (part === 'seats' && req.method === 'GET') return json(res, 200, seatMap(trip.id));
   if (trip.status === 'cancelled' && ['passengers','baggage'].includes(part)) return fail(res,409,'Turen er annulleret og kan ikke længere bruges til salg eller check-in');
@@ -414,7 +414,7 @@ async function api(req, res, pathname) {
   }
   if (part === 'passengers' && req.method === 'PATCH') {
     const data = await body(req); const passenger = db.passengers.find(p => p.id === Number(data.id) && p.tripId === trip.id); if (!passenger) return fail(res, 404, 'Passageren findes ikke');
-    if(user.role==='sales_manager'&&passenger.pickupStopId!==trip.originId)return fail(res,403,'Salgschefen kan kun betjene passagerer ved turens startsted');
+    if(user.role==='sales_manager'&&passenger.pickupStopId!==trip.originId&&data.paymentStatus==='cash')return fail(res,403,'Salgschefen kan kun modtage billetbetaling ved turens startsted');
     if (data.paymentStatus === 'cash') {
       if (passenger.paymentStatus !== 'unpaid') return fail(res, 409, 'Billetten er allerede afsluttet som betalt eller gratis');
       const amount = Number(data.cashAmount); const currency = ['DKK','EUR'].includes(data.paymentCurrency) ? data.paymentCurrency : null; const location = user.role==='sales_manager'?'departure':['bus','shop'].includes(data.paymentLocation) ? data.paymentLocation : null;

@@ -130,7 +130,7 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(seats.find(seat => seat.number === 1).surcharge, 75);
     assert.equal(seats.find(seat => seat.number === 23).surcharge, 100);
 
-    const unpaidPassenger = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Ubetalt Passager', phone: '11111111', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'unpaid', seatNumber: 23 } })).value;
+    const unpaidPassenger = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Ubetalt Passager', phone: '11111111', pickupStopId: extraStop.id, destinationStopId: destination.id, paymentStatus: 'unpaid', seatNumber: 23 } })).value;
     await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Euro Passager', phone: '22222222', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'cash', paymentCurrency: 'EUR', cashAmount: 25, seatNumber: 1 } });
     await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Gratis Passager', phone: '33333333', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'free', freeTicketReason: 'Test', seatNumber: 2 } });
     await expectStatus(baseUrl, 409, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Dublet', phone: '44444444', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'unpaid', seatNumber: 1 } });
@@ -143,6 +143,9 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(driverTicket.paymentLocation, 'bus');
     assert.equal(driverTicket.paymentRecordedBy, 2);
     assert.equal(driverTicket.cashHolderUserId, 2);
+    const salesTripView = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}`, { cookie: sales })).value;
+    assert.equal(salesTripView.passengers.length, 5);
+    assert.ok(salesTripView.passengers.some(passenger => passenger.pickupStopId === extraStop.id));
     await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: spare, body: { name: 'Ikke tildelt chauffør', phone: '68686868', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'cash', paymentCurrency: 'DKK', cashAmount: 100, seatNumber: 5 } });
 
     const baggagePhotoData = `data:image/png;base64,${Buffer.from('busops-baggage-photo').toString('base64')}`;
@@ -162,7 +165,11 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(baggagePhoto.response.headers.get('content-type'), 'image/png');
     await expectStatus(baseUrl, 403, `/api/baggage/${driverBaggage.id}/photo`, { cookie: spare });
 
-    await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'PATCH', cookie: driver, body: { id: unpaidPassenger.id, checkedIn: true } });
+    const salesCheckIn = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'PATCH', cookie: sales, body: { id: unpaidPassenger.id, checkedIn: true } })).value;
+    assert.equal(salesCheckIn.checkedInBy, salesManager.id);
+    await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/passengers`, { method: 'PATCH', cookie: sales, body: { id: unpaidPassenger.id, paymentStatus: 'cash', cashAmount: 500, paymentCurrency: 'DKK', paymentLocation: 'departure' } });
+    const completedExtraStop = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}`, { method: 'PATCH', cookie: sales, body: { completedStopId: extraStop.id } })).value;
+    assert.ok(completedExtraStop.completedStopIds.includes(extraStop.id));
     const paidPassenger = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'PATCH', cookie: driver, body: { id: unpaidPassenger.id, paymentStatus: 'cash', cashAmount: 500, paymentCurrency: 'DKK', paymentLocation: 'bus' } })).value;
     assert.equal(paidPassenger.cashHolderUserId, 2);
     const unchangedPayment = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'PATCH', cookie: driver, body: { id: unpaidPassenger.id, paymentStatus: 'unpaid' } })).value;
