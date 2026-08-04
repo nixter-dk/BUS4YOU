@@ -30,6 +30,7 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Driftskalender med dags-, uge- og månedsvisning, mobil tidslinje, ressourcekonflikter, driftsadvarsler, filtre og hurtigt turpanel
 - Rollebaseret overblik for administrator, chauffør og salgschef med næste afgang, handlingskø, dagens tidslinje, hurtige funktioner, salg og personligt kontantansvar
 - Opsamlingssteder, som kun administratoren kan oprette, redigere og slette
+- Faste startpunkter for ture: kun København eller Tetovo; andre steder bruges fortsat som opsamlingssted eller destination
 - To chauffører pr. tur, hvor én er primær
 - Administratoren kan skifte turens primære og sekundære chauffør, indtil den første passager er checket ind
 - Salgschefer kan se alle ture og håndtere check-in, billetsalg og bagage ved den enkelte turs startsted

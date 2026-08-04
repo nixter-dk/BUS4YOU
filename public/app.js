@@ -674,3 +674,8 @@ renderTab=function(){renderTabBeforeDriverBaggageIntake();if(state.user.role!=='
 
 const checkInModeBeforeDriverBaggageIntake=renderCheckInMode;
 renderCheckInMode=function(){checkInModeBeforeDriverBaggageIntake();if(state.user.role!=='driver'||!$('#driverTicketShortcut'))return;$('#driverTicketShortcut').insertAdjacentHTML('afterend','<button class="driver-ticket-shortcut driver-baggage-shortcut" id="driverBaggageShortcut"><b>▣</b><span><strong>Modtag bagage i bussen</strong><small>Tag foto og registrer betalingen</small></span><i>→</i></button>');$('#driverBaggageShortcut').onclick=()=>{state.tab='baggage';renderTrip()}};
+
+// A trip always starts in Copenhagen or Tetovo. Other stops remain available for pickup and destination.
+function isFixedStartPoint(stop){return ['københavn','tetovo'].includes(String(stop?.name||'').trim().toLocaleLowerCase('da-DK'))}
+const newTripBeforeFixedStartPoint=$('#newTrip').onclick;
+$('#newTrip').onclick=()=>{newTripBeforeFixedStartPoint();const form=$('#createTrip');if(!form)return;const startPoints=state.stops.filter(isFixedStartPoint);form.originId.innerHTML=startPoints.length?startPoints.map(stop=>`<option value="${stop.id}">${esc(stop.name)}</option>`).join(''):'<option value="">Opret København eller Tetovo først</option>';form.originId.closest('label').insertAdjacentHTML('beforeend','<small class="fixed-start-note">Fast startpunkt: København eller Tetovo</small>')};

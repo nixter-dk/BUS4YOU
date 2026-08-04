@@ -73,6 +73,17 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     const spareLogin = await expectStatus(baseUrl, 200, '/api/login', { method: 'POST', body: { email: 'testdriver@albaturist.dk', password: 'testpass123' } });
     const spare = cookieFrom(spareLogin.response);
 
+    await expectStatus(baseUrl, 400, '/api/trips', {
+      method: 'POST', cookie: admin, body: {
+        title: 'Ugyldigt startsted',
+        departureAt: new Date(Date.now() + 86400000).toISOString(),
+        originId: extraStop.id,
+        destinationId: destination.id,
+        busId: doubleBus.id,
+        primaryDriverId: 2
+      }
+    });
+
     const trip = (await expectStatus(baseUrl, 201, '/api/trips', {
       method: 'POST', cookie: admin, body: {
         title: 'Systemtest København–Skopje',
