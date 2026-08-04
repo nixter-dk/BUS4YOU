@@ -124,7 +124,8 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: sales, body: { name: 'Forkert stop', phone: '55555555', pickupStopId: extraStop.id, destinationStopId: destination.id, paymentStatus: 'cash', paymentCurrency: 'DKK', cashAmount: 100, seatNumber: 3 } });
     await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: sales, body: { name: 'Gratis fra salg', phone: '55555555', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'free', seatNumber: 3 } });
     await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: sales, body: { name: 'Startsted Passager', phone: '66666666', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'cash', paymentCurrency: 'DKK', cashAmount: 100, seatNumber: 3 } });
-    const driverTicket = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: driver, body: { name: 'Billet i bussen', phone: '67676767', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'cash', paymentCurrency: 'EUR', cashAmount: 40, seatNumber: 4 } })).value;
+    const driverTicket = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: driver, body: { name: 'Billet i bussen', phone: '67676767', pickupStopId: extraStop.id, destinationStopId: destination.id, paymentStatus: 'cash', paymentCurrency: 'EUR', cashAmount: 40, seatNumber: 4 } })).value;
+    assert.equal(driverTicket.pickupStopId, extraStop.id);
     assert.equal(driverTicket.paymentLocation, 'bus');
     assert.equal(driverTicket.paymentRecordedBy, 2);
     assert.equal(driverTicket.cashHolderUserId, 2);

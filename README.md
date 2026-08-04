@@ -31,6 +31,7 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Rollebaseret overblik for administrator, chauffør og salgschef med næste afgang, handlingskø, dagens tidslinje, hurtige funktioner, salg og personligt kontantansvar
 - Opsamlingssteder, som kun administratoren kan oprette, redigere og slette
 - Faste startpunkter for ture: kun København eller Tetovo; andre steder bruges fortsat som opsamlingssted eller destination
+- Passagerens opsamlingssted vælges uafhængigt af turens startpunkt, så administratoren og de tildelte chauffører kan vælge mellem alle oprettede opsamlingssteder
 - To chauffører pr. tur, hvor én er primær
 - Administratoren kan skifte turens primære og sekundære chauffør, indtil den første passager er checket ind
 - Salgschefer kan se alle ture og håndtere check-in, billetsalg og bagage ved den enkelte turs startsted

@@ -679,3 +679,7 @@ renderCheckInMode=function(){checkInModeBeforeDriverBaggageIntake();if(state.use
 function isFixedStartPoint(stop){return ['københavn','tetovo'].includes(String(stop?.name||'').trim().toLocaleLowerCase('da-DK'))}
 const newTripBeforeFixedStartPoint=$('#newTrip').onclick;
 $('#newTrip').onclick=()=>{newTripBeforeFixedStartPoint();const form=$('#createTrip');if(!form)return;const startPoints=state.stops.filter(isFixedStartPoint);form.originId.innerHTML=startPoints.length?startPoints.map(stop=>`<option value="${stop.id}">${esc(stop.name)}</option>`).join(''):'<option value="">Opret København eller Tetovo først</option>';form.originId.closest('label').insertAdjacentHTML('beforeend','<small class="fixed-start-note">Fast startpunkt: København eller Tetovo</small>')};
+
+// Passenger pickup is independent of the trip origin and keeps every registered stop available.
+const passengerFormBeforeFlexiblePickup=passengerForm;
+passengerForm=function(){const note=state.user.role==='sales_manager'?'Salgschefen betjener kun turens startsted':'Alle oprettede opsamlingssteder kan vælges';return passengerFormBeforeFlexiblePickup().replace('</select></label><label>Til','</select><small class="passenger-pickup-note">'+note+'</small></label><label>Til')};
