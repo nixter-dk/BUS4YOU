@@ -575,3 +575,78 @@ renderDashboard=async function(){state.trip=null;activate('dashboard');setTitle(
 
 function wireRoleDashboard(next){const act=async action=>{if(action==='calendar')return renderCalendar();if(action==='economy')return renderReports();if(action==='drivers')return renderDrivers();if(action==='new-trip')return $('#newTrip').click();if(!next)return toast('Der er ingen kommende tur');if(action==='checkin')return openDashboardTrip(next.id,'checkin');if(action==='passenger')return openDashboardTrip(next.id,'passengers',true);if(action==='baggage')return openDashboardTrip(next.id,'baggage');if(action==='expenses')return openDashboardTrip(next.id,'expenses');if(action==='cash')return openDashboardTrip(next.id,'settlements')};$$('[data-dashboard-action]').forEach(button=>button.onclick=()=>act(button.dataset.dashboardAction));$$('[data-dashboard-quick]').forEach(button=>button.onclick=()=>act(button.dataset.dashboardQuick));$$('[data-dashboard-open-trip]').forEach(button=>button.onclick=()=>openDashboardTrip(Number(button.dataset.dashboardOpenTrip)));$$('[data-dashboard-checkin]').forEach(button=>button.onclick=()=>openDashboardTrip(Number(button.dataset.dashboardCheckin),'checkin'));$$('.dashboard-today-panel [data-calendar-trip]').forEach(button=>button.onclick=()=>openDashboardTrip(Number(button.dataset.calendarTrip)))}
 async function openDashboardTrip(id,tab,focusForm=false){await openTrip(id);if(tab){state.tab=tab;renderTrip()}const back=$('#back');if(back)back.onclick=renderDashboard;if(focusForm)setTimeout(()=>$('#passengerForm')?.scrollIntoView({behavior:'smooth',block:'start'}))}
+
+// Administratorens turudgifter vises som adskilte mapper, én planlagt tur ad gangen.
+const reportsBeforeTripExpenseBrowser=renderReports;
+renderReports=async function(){
+  await reportsBeforeTripExpenseBrowser();
+  if(!$('.nav[data-view="reports"]')?.classList.contains('active'))return;
+  try{
+    const report=await api('/api/reports');
+    renderTripExpenseBrowser(report);
+  }catch(error){toast(error.message)}
+};
+
+function expenseTotalsForTrip(expenses,status){
+  return ['DKK','EUR'].reduce((totals,currency)=>{
+    totals[currency]=expenses.filter(expense=>(!status||(expense.status||'pending')===status)&&expense.currency===currency).reduce((sum,expense)=>sum+Number(expense.amount||0),0);
+    return totals;
+  },{});
+}
+
+function plannedExpenseTrips(){
+  const now=Date.now(),trips=(state.trips||[]).filter(trip=>trip.status!=='cancelled');
+  const active=trips.filter(trip=>new Date(trip.departureAt).getTime()+Number(trip.durationMinutes||480)*60000>=now).sort((a,b)=>new Date(a.departureAt)-new Date(b.departureAt));
+  const previous=trips.filter(trip=>new Date(trip.departureAt).getTime()+Number(trip.durationMinutes||480)*60000<now).sort((a,b)=>new Date(b.departureAt)-new Date(a.departureAt));
+  return [...active,...previous];
+}
+
+function renderTripExpenseBrowser(report){
+  $('#tripExpenseBrowser')?.remove();
+  [...$$('.report-section')].find(panel=>panel.querySelector('h2')?.textContent==='Turudgifter og kvitteringer')?.remove();
+  $('.expense-approval-panel')?.remove();
+  const trips=plannedExpenseTrips(),expenses=report.expenses||[];
+  const anchor=$('.advanced-trip-economy')||$('.economy-control');
+  if(!anchor)return;
+  if(!trips.length){
+    anchor.insertAdjacentHTML('afterend','<section class="trip-expense-browser empty-trip-expenses" id="tripExpenseBrowser"><span class="trip-expense-folder-icon">▧</span><div><small>TURUDGIFTSMAPPER</small><h2>Ingen planlagte ture</h2><p>Opret en tur i kalenderen. Derefter får turen automatisk sin egen udgiftsmappe.</p></div></section>');
+    return;
+  }
+  const firstWithAction=trips.find(trip=>expenses.some(expense=>expense.tripId===trip.id&&((expense.status||'pending')==='pending'||!expense.receiptFile))),firstUpcoming=trips.find(trip=>new Date(trip.departureAt)>new Date());
+  if(!trips.some(trip=>trip.id===Number(state.expenseTripId)))state.expenseTripId=firstWithAction?.id||firstUpcoming?.id||trips[0].id;
+  const selected=trips.find(trip=>trip.id===Number(state.expenseTripId)),selectedIndex=trips.findIndex(trip=>trip.id===selected.id),selectedExpenses=expenses.filter(expense=>expense.tripId===selected.id).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  const approved=expenseTotalsForTrip(selectedExpenses,'approved'),pending=expenseTotalsForTrip(selectedExpenses,'pending'),missing=selectedExpenses.filter(expense=>!expense.receiptFile).length,privateOpen=selectedExpenses.filter(expense=>(expense.paymentMethod||'cash')==='private'&&(expense.reimbursementStatus||'pending')!=='paid'&&(expense.status||'pending')!=='rejected').length;
+  const tripButtons=trips.map(trip=>{const tripExpenses=expenses.filter(expense=>expense.tripId===trip.id),tripPending=tripExpenses.filter(expense=>(expense.status||'pending')==='pending').length,tripMissing=tripExpenses.filter(expense=>!expense.receiptFile).length;return`<button class="trip-expense-folder ${trip.id===selected.id?'active':''}" data-expense-trip="${trip.id}"><span class="trip-expense-folder-icon">▧</span><span><strong>${esc(trip.title)}</strong><small>${date(trip.departureAt)} · ${tripExpenses.length} udgifter</small></span>${tripPending||tripMissing?`<b>${tripPending+tripMissing}</b>`:'<i>✓</i>'}</button>`}).join('');
+  const options=trips.map(trip=>`<option value="${trip.id}" ${trip.id===selected.id?'selected':''}>${new Date(trip.departureAt).toLocaleDateString('da-DK')} · ${esc(trip.title)}</option>`).join('');
+  const rows=selectedExpenses.length?selectedExpenses.map(adminTripExpenseCard).join(''):'<div class="trip-expense-empty"><span>✓</span><strong>Ingen udgifter på denne tur</strong><p>Når en chauffør eller administrator registrerer en udgift, vises den kun i denne mappe.</p></div>';
+  anchor.insertAdjacentHTML('afterend',`<section class="trip-expense-browser" id="tripExpenseBrowser"><header class="trip-expense-browser-head"><div><small>ADMINISTRATOR · TURUDGIFTSMAPPER</small><h2>Udgifter adskilt efter tur</h2><p>Vælg en tur for kun at se dens udgifter, bilag og godkendelser.</p></div><div class="trip-expense-navigation"><button id="previousExpenseTrip" aria-label="Forrige turs udgifter" ${selectedIndex===0?'disabled':''}>‹</button><label>Vælg tur<select id="expenseTripNavigator">${options}</select></label><button id="nextExpenseTrip" aria-label="Næste turs udgifter" ${selectedIndex===trips.length-1?'disabled':''}>›</button></div></header><div class="trip-expense-browser-layout"><nav class="trip-expense-folders" aria-label="Planlagte tures udgiftsmapper">${tripButtons}</nav><div class="trip-expense-selected"><header><div><small>${calendarStatusLabel(calendarStatus(selected))} · ${date(selected.departureAt)}</small><h3>${esc(selected.title)}</h3><p>${esc(selected.origin?.name||'–')} → ${esc(selected.destination?.name||'–')} · ${esc(selected.bus?.name||'Ingen bus')}</p></div><button class="mini" id="openSelectedTripExpenses">Åbn turens udgiftsmappe →</button></header><div class="trip-expense-totals"><div class="approved"><span>Godkendt</span>${economyValues(approved,'all',true)}</div><div class="pending"><span>Afventer</span>${economyValues(pending,'all',true)}</div><div class="${missing?'attention':''}"><span>Mangler kvittering</span><strong>${missing}</strong></div><div class="${privateOpen?'attention':''}"><span>Private udlæg åbne</span><strong>${privateOpen}</strong></div></div><div class="admin-trip-expense-list">${rows}</div></div></div></section>`);
+  wireTripExpenseBrowser(report,trips,selectedIndex,selected.id);
+}
+
+function adminTripExpenseCard(expense){
+  const status=expense.status||'pending',missing=!expense.receiptFile,privatePending=(expense.paymentMethod||'cash')==='private'&&status==='approved'&&(expense.reimbursementStatus||'pending')!=='paid';
+  return`<article class="admin-trip-expense-card"><span class="admin-expense-status ${status}">${expenseStatusLabel(status)}</span><div class="admin-expense-main"><small>${date(expense.expenseDate||expense.createdAt)} · ${expenseMethodLabel(expense.paymentMethod||'cash')}</small><h4>${esc(expense.category)}</h4><p>${esc(expense.description||'Ingen beskrivelse')}</p><span>Betalt af <b>${esc(expense.paidByName||expense.createdByName||'Ukendt')}</b> · registreret af ${esc(expense.createdByName||'Ukendt')}</span></div><strong class="admin-expense-amount">${money(expense.amount,expense.currency)}</strong><div class="admin-expense-receipt ${missing?'missing':''}">${missing?'<span>Kvittering mangler</span>':`<a href="/api/expenses/${expense.id}/receipt" target="_blank">Se kvittering ↗</a>`}</div><div class="admin-expense-actions">${status==='pending'?`<button class="mini done" data-admin-approve-expense="${expense.id}" ${missing?'disabled title="Kvittering mangler"':''}>Godkend</button><button class="mini danger" data-admin-reject-expense="${expense.id}">Afvis</button>`:''}${privatePending?`<button class="mini reimburse" data-admin-reimburse-expense="${expense.id}">Marker tilbagebetalt</button>`:''}</div>${expense.reviewNote?`<div class="admin-expense-note"><b>Kommentar:</b> ${esc(expense.reviewNote)}</div>`:''}</article>`;
+}
+
+function wireTripExpenseBrowser(report,trips,index,tripId){
+  state.adminExpenseReport=report;
+  $$('[data-expense-trip]').forEach(button=>button.onclick=()=>{state.expenseTripId=Number(button.dataset.expenseTrip);renderTripExpenseBrowser(report)});
+  $('#expenseTripNavigator').onchange=event=>{state.expenseTripId=Number(event.target.value);renderTripExpenseBrowser(report)};
+  $('#previousExpenseTrip').onclick=()=>{if(index>0){state.expenseTripId=trips[index-1].id;renderTripExpenseBrowser(report)}};
+  $('#nextExpenseTrip').onclick=()=>{if(index<trips.length-1){state.expenseTripId=trips[index+1].id;renderTripExpenseBrowser(report)}};
+  $('#openSelectedTripExpenses').onclick=async()=>{await openTrip(tripId);state.tab='expenses';renderTrip();const back=$('#back');if(back)back.onclick=renderReports};
+  $$('[data-admin-approve-expense]').forEach(button=>button.onclick=()=>reviewAdminTripExpense(Number(button.dataset.adminApproveExpense),'approved'));
+  $$('[data-admin-reject-expense]').forEach(button=>button.onclick=()=>reviewAdminTripExpense(Number(button.dataset.adminRejectExpense),'rejected'));
+  $$('[data-admin-reimburse-expense]').forEach(button=>button.onclick=()=>reimburseAdminTripExpense(Number(button.dataset.adminReimburseExpense)));
+}
+
+async function reviewAdminTripExpense(id,status){
+  let reviewNote='';
+  if(status==='rejected'){const reason=prompt('Hvorfor afvises udgiften?');if(reason===null)return;reviewNote=reason}
+  try{await api(`/api/expenses/${id}`,{method:'PATCH',body:JSON.stringify({status,reviewNote})});toast(status==='approved'?'Udgiften er godkendt':'Udgiften er afvist');await renderReports()}catch(error){toast(error.message)}
+}
+
+async function reimburseAdminTripExpense(id){
+  if(!confirm('Bekræft, at det private udlæg er tilbagebetalt.'))return;
+  try{await api(`/api/expenses/${id}`,{method:'PATCH',body:JSON.stringify({reimbursementStatus:'paid'})});toast('Udlægget er markeret som tilbagebetalt');await renderReports()}catch(error){toast(error.message)}
+}
