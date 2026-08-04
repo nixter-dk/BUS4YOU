@@ -24,7 +24,7 @@ function seed() {
   const tomorrow = new Date(Date.now() + 86400000);
   tomorrow.setHours(8, 0, 0, 0);
   return {
-    meta: { version: 8, nextId: 20 },
+    meta: { version: 9, nextId: 20 },
     users: [
       { id: 1, name: 'Administrator', email: 'admin@albaturist.dk', role: 'admin', salt: admin.salt, passwordHash: admin.hash },
       { id: 2, name: 'Mads Chauffør', email: 'mads@albaturist.dk', role: 'driver', salt: driver1.salt, passwordHash: driver1.hash },
@@ -59,6 +59,7 @@ if ((db.meta?.version || 1) < 7) {
   db.meta.version = 7; migrated = true;
 }
 if ((db.meta?.version || 1) < 8) { for (const expense of db.expenses || []) if (!expense.status) expense.status = 'pending'; db.meta.version = 8; migrated = true; }
+if ((db.meta?.version || 1) < 9) { for (const item of db.baggage || []) { item.photoName = item.photoName || null; item.photoType = item.photoType || null; item.photoFile = item.photoFile || null; } db.meta.version = 9; migrated = true; }
 for (const trip of db.trips) {
   if (!trip.seatCount) { trip.seatCount = 54; migrated = true; }
   if (!trip.durationMinutes) { trip.durationMinutes = 480; migrated = true; }
@@ -315,6 +316,14 @@ async function api(req, res, pathname) {
     const file = path.join(UPLOAD_DIR,expense.receiptFile); if (!fs.existsSync(file)) return fail(res, 404, 'Kvitteringsfilen findes ikke');
     res.writeHead(200,{ 'Content-Type': expense.receiptType, 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(expense.receiptName)}` }); fs.createReadStream(file).pipe(res); return;
   }
+  const baggagePhotoMatch = pathname.match(/^\/api\/baggage\/(\d+)\/photo$/);
+  if (baggagePhotoMatch && req.method === 'GET') {
+    const item = db.baggage.find(candidate => candidate.id === Number(baggagePhotoMatch[1])); if (!item || !item.photoFile) return fail(res,404,'Bagagebilledet findes ikke');
+    const photoTrip = db.trips.find(candidate => candidate.id === item.tripId); if (!photoTrip || !allowedTrip(user,photoTrip)) return fail(res,403,'Du har ikke adgang til bagagebilledet');
+    if (user.role === 'sales_manager' && item.pickupStopId !== photoTrip.originId) return fail(res,403,'Salgschefen kan kun se bagage fra turens startsted');
+    const file = path.join(UPLOAD_DIR,item.photoFile); if (!fs.existsSync(file)) return fail(res,404,'Bagagebilledets fil findes ikke');
+    res.writeHead(200,{ 'Content-Type': item.photoType, 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(item.photoName)}` }); fs.createReadStream(file).pipe(res); return;
+  }
   const match = pathname.match(/^\/api\/trips\/(\d+)(?:\/(passengers|baggage|seats|expenses|settlements))?$/);
   if (!match) return fail(res, 404, 'Ikke fundet');
   const trip = db.trips.find(t => t.id === Number(match[1])); if (!trip) return fail(res, 404, 'Turen findes ikke');
@@ -408,9 +417,13 @@ async function api(req, res, pathname) {
     const data = await body(req); if (!data.senderName?.trim() || !data.phone?.trim() || !data.pickupStopId || !data.destinationStopId || !data.pieces) return fail(res, 400, 'Udfyld bagagens obligatoriske felter');
     if(user.role==='sales_manager'&&Number(data.pickupStopId)!==trip.originId)return fail(res,403,'Salgschefen kan kun modtage bagage ved turens startsted');
     if(data.paymentStatus==='cash'&&!(Number(data.cashAmount)>0))return fail(res,400,'Angiv det modtagne kontantbeløb');
+    const photoType=String(data.photoType||''),photoName=path.basename(String(data.photoName||'bagagefoto'));if(!data.photoData)return fail(res,400,'Tag eller vælg et billede af bagagen');
+    if(!['image/jpeg','image/png','image/webp'].includes(photoType))return fail(res,400,'Bagagebilledet skal være JPG, PNG eller WebP');
+    const encodedPhoto=String(data.photoData).replace(/^data:[^;]+;base64,/,'');const photoData=Buffer.from(encodedPhoto,'base64');if(!photoData.length||photoData.length>5*1024*1024)return fail(res,400,'Bagagebilledet skal være mellem 1 byte og 5 MB');
+    const photoExtensions={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp'},photoFile=`baggage-${crypto.randomBytes(18).toString('hex')}${photoExtensions[photoType]}`;fs.mkdirSync(UPLOAD_DIR,{recursive:true});fs.writeFileSync(path.join(UPLOAD_DIR,photoFile),photoData);
     const paymentCurrency = ['DKK','EUR'].includes(data.paymentCurrency) ? data.paymentCurrency : 'DKK';
     const createdAt=new Date().toISOString();
-    const item = { id: id(), tripId: trip.id, senderName: data.senderName.trim(), phone: data.phone.trim(), pickupStopId: Number(data.pickupStopId), destinationStopId: Number(data.destinationStopId), pieces: Number(data.pieces), description: String(data.description || '').trim(), paymentStatus: data.paymentStatus === 'cash' ? 'cash' : 'unpaid', paymentCurrency, cashAmount: data.paymentStatus === 'cash' ? Number(data.cashAmount || 0) : 0, paymentLocation: data.paymentStatus === 'cash' ? (user.role==='sales_manager'?'departure':'shop') : null, paymentRecordedAt: data.paymentStatus === 'cash' ? createdAt : null, paymentRecordedBy: data.paymentStatus === 'cash' ? user.id : null, cashHolderUserId: data.paymentStatus === 'cash'&&user.role==='sales_manager'?user.id:null, notes: String(data.notes || '').trim(), status: 'registered', createdAt, createdBy:user.id, statusUpdatedAt:createdAt, statusUpdatedBy:user.id, baggageHistory:[{action:'registered',at:createdAt,userId:user.id}] };
+    const item = { id: id(), tripId: trip.id, senderName: data.senderName.trim(), phone: data.phone.trim(), pickupStopId: Number(data.pickupStopId), destinationStopId: Number(data.destinationStopId), pieces: Number(data.pieces), description: String(data.description || '').trim(), photoName, photoType, photoFile, paymentStatus: data.paymentStatus === 'cash' ? 'cash' : 'unpaid', paymentCurrency, cashAmount: data.paymentStatus === 'cash' ? Number(data.cashAmount || 0) : 0, paymentLocation: data.paymentStatus === 'cash' ? (user.role==='sales_manager'?'departure':'shop') : null, paymentRecordedAt: data.paymentStatus === 'cash' ? createdAt : null, paymentRecordedBy: data.paymentStatus === 'cash' ? user.id : null, cashHolderUserId: data.paymentStatus === 'cash'&&user.role==='sales_manager'?user.id:null, notes: String(data.notes || '').trim(), status: 'registered', createdAt, createdBy:user.id, statusUpdatedAt:createdAt, statusUpdatedBy:user.id, baggageHistory:[{action:'registered',at:createdAt,userId:user.id}] };
     db.baggage.push(item); saveDb(); return json(res, 201, baggageRecordView(item));
   }
   if (part === 'baggage' && req.method === 'PATCH') {

@@ -114,9 +114,15 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: sales, body: { name: 'Gratis fra salg', phone: '55555555', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'free', seatNumber: 3 } });
     await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: sales, body: { name: 'Startsted Passager', phone: '66666666', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'cash', paymentCurrency: 'DKK', cashAmount: 100, seatNumber: 3 } });
 
-    const driverBaggage = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: admin, body: { senderName: 'Bagage A', phone: '77777777', pickupStopId: origin.id, destinationStopId: destination.id, pieces: 2, description: 'Kufferter', paymentStatus: 'unpaid' } })).value;
+    const baggagePhotoData = `data:image/png;base64,${Buffer.from('busops-baggage-photo').toString('base64')}`;
+    await expectStatus(baseUrl, 400, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: admin, body: { senderName: 'Uden foto', phone: '70000000', pickupStopId: origin.id, destinationStopId: destination.id, pieces: 1, paymentStatus: 'unpaid' } });
+    const driverBaggage = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: admin, body: { senderName: 'Bagage A', phone: '77777777', pickupStopId: origin.id, destinationStopId: destination.id, pieces: 2, description: 'Kufferter', paymentStatus: 'unpaid', photoName: 'bagage.png', photoType: 'image/png', photoData: baggagePhotoData } })).value;
+    assert.ok(driverBaggage.photoFile);
     await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: sales, body: { senderName: 'Forkert bagage', phone: '77777777', pickupStopId: extraStop.id, destinationStopId: destination.id, pieces: 1, paymentStatus: 'cash', cashAmount: 50, paymentCurrency: 'DKK' } });
-    await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: sales, body: { senderName: 'Bagage ved start', phone: '88888888', pickupStopId: origin.id, destinationStopId: destination.id, pieces: 1, description: 'Pakke', paymentStatus: 'cash', cashAmount: 50, paymentCurrency: 'DKK' } });
+    await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: sales, body: { senderName: 'Bagage ved start', phone: '88888888', pickupStopId: origin.id, destinationStopId: destination.id, pieces: 1, description: 'Pakke', paymentStatus: 'cash', cashAmount: 50, paymentCurrency: 'DKK', photoName: 'pakke.png', photoType: 'image/png', photoData: baggagePhotoData } });
+    const baggagePhoto = await expectStatus(baseUrl, 200, `/api/baggage/${driverBaggage.id}/photo`, { cookie: driver });
+    assert.equal(baggagePhoto.response.headers.get('content-type'), 'image/png');
+    await expectStatus(baseUrl, 403, `/api/baggage/${driverBaggage.id}/photo`, { cookie: spare });
 
     await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'PATCH', cookie: driver, body: { id: unpaidPassenger.id, checkedIn: true } });
     const paidPassenger = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'PATCH', cookie: driver, body: { id: unpaidPassenger.id, paymentStatus: 'cash', cashAmount: 500, paymentCurrency: 'DKK', paymentLocation: 'bus' } })).value;

@@ -59,6 +59,7 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Mobilvenlig digital udgiftsmappe per tur med betalingsmetode, betaler, kategori, beløb, DKK/EUR og PDF- eller billedkvittering
 - Udgifter kan gemmes før kvitteringen er klar, men kan først godkendes efter bilaget er tilføjet; private udlæg har særskilt tilbagebetalingsstatus
 - Separat liste over sendt bagage
+- Obligatorisk foto af hver bagageforsendelse som dokumentation på den valgte tur
 - Bagageflow: registreret, modtaget, ombord, udleveret og ikke afhentet
 - Vedvarende lokal database med atomisk lagring
 
