@@ -1,5 +1,6 @@
 data/db.json
 data/uploads/
 .env
+.env.production
 node_modules/
 *.log

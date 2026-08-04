@@ -4,9 +4,10 @@ Første fungerende MVP til booking, sædevalg, bagage og check-in på busture.
 
 ## Start lokalt
 
-Krav: Node.js 16 eller nyere. Projektet har ingen eksterne pakker.
+Krav: Node.js 22 eller nyere.
 
 ```powershell
+npm install
 npm start
 ```
 
@@ -79,6 +80,10 @@ public/             Brugerflade
 server.js           Webserver, API, adgangskontrol og datalag
 data/db.json        Oprettes automatisk ved første start
 docs/schema.md      Datamodel og produktionsvej
+docs/production.md  Sikker onlineopsætning og backup
+Dockerfile          Standardiseret produktionscontainer
+render.yaml         Samlet Render-opsætning med web, database og fil-disk
+.github/workflows/  Automatisk test før deployment
 ```
 
 ## Konfiguration
@@ -88,6 +93,12 @@ docs/schema.md      Datamodel og produktionsvej
 | `PORT` | `3000` | Serverport |
 | `HOST` | `127.0.0.1` | Netværksinterface |
 | `DB_FILE` | `data/db.json` | Placering af databasen |
+| `DATABASE_URL` | tom | PostgreSQL-forbindelse i produktion |
+| `UPLOAD_DIR` | `data/uploads` | Bagagebilleder og kvitteringer |
+| `INITIAL_ADMIN_EMAIL` | `admin@albaturist.dk` | Første administrator i en tom database |
+| `INITIAL_ADMIN_PASSWORD` | kun lokal demo | Påkrævet i produktion, mindst 12 tegn |
+| `SESSION_TTL_HOURS` | `8` | Login-sessionens varighed |
+| `TRUST_PROXY` | `false` | Sættes til `true` bag hostingudbyderens HTTPS-proxy |
 
 ## Systemtest
 
@@ -117,6 +128,12 @@ Hvis den tomme remote bruger `master`, kan den aktuelle gren i stedet pushes med
 git push -u origin HEAD:master
 ```
 
-## Før produktion
+## Online uden eget domæne
 
-MVP'en er beregnet til afprøvning. Næste produktionstrin er PostgreSQL, permanent sessionlager, nulstilling af adgangskoder, CSRF-beskyttelse, revisionslog, automatiske tests, backups og HTTPS-deployment. Datamodellen er dokumenteret i `docs/schema.md`.
+Projektet er klargjort til en hostingudbyders HTTPS-adresse og behøver derfor ikke et eget domæne. Produktionsversionen understøtter PostgreSQL, permanente login-sessioner, Secure-cookie, kontrol af afsenderadresse, loginbegrænsning, sikkerhedsoverskrifter, helbredstjek og kontrolleret nedlukning.
+
+Den medfølgende `render.yaml` kan oprette webtjeneste, PostgreSQL og permanent fil-disk i Frankfurt. Render tildeler automatisk en `onrender.com`-adresse med HTTPS. Den permanente disk og en database til varig drift kræver en betalt opsætning.
+
+Bagagebilleder og kvitteringer skal ligge på en permanent disk. Database og disk skal sikkerhedskopieres separat. Den samlede trin-for-trin-tjekliste findes i `docs/production.md`.
+
+Ved en helt tom produktionsdatabase oprettes kun administratoren fra `INITIAL_ADMIN_EMAIL` og `INITIAL_ADMIN_PASSWORD`. Demo-chauffører oprettes aldrig i produktion.

@@ -1,11 +1,15 @@
 {
   "name": "busops-albaturist",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Booking- og check-in-system til busture",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "check": "node --check server.js && node --check public/app.js && node --test"
   },
-  "engines": { "node": ">=16" }
+  "engines": { "node": ">=22 <27" },
+  "dependencies": {
+    "pg": "^8.22.0"
+  }
 }

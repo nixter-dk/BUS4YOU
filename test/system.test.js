@@ -66,11 +66,11 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     await expectStatus(baseUrl, 400, '/api/buses', { method: 'POST', cookie: admin, body: { name: 'For stor', registration: 'EF 11111', type: 'standard', seatCount: 55 } });
     await expectStatus(baseUrl, 403, '/api/buses', { method: 'POST', cookie: driver, body: { name: 'Ikke tilladt', registration: 'XX 00000', type: 'standard', seatCount: 10 } });
 
-    const spareDriver = (await expectStatus(baseUrl, 201, '/api/drivers', { method: 'POST', cookie: admin, body: { name: 'Test Chauffør', email: 'testdriver@albaturist.dk', password: 'testpass123' } })).value;
-    const salesManager = (await expectStatus(baseUrl, 201, '/api/sales-managers', { method: 'POST', cookie: admin, body: { name: 'Test Salgschef', email: 'testsalg@albaturist.dk', password: 'testpass123' } })).value;
-    const salesLogin = await expectStatus(baseUrl, 200, '/api/login', { method: 'POST', body: { email: 'testsalg@albaturist.dk', password: 'testpass123' } });
+    const spareDriver = (await expectStatus(baseUrl, 201, '/api/drivers', { method: 'POST', cookie: admin, body: { name: 'Test Chauffør', email: 'testdriver@albaturist.dk', password: 'testpass1234' } })).value;
+    const salesManager = (await expectStatus(baseUrl, 201, '/api/sales-managers', { method: 'POST', cookie: admin, body: { name: 'Test Salgschef', email: 'testsalg@albaturist.dk', password: 'testpass1234' } })).value;
+    const salesLogin = await expectStatus(baseUrl, 200, '/api/login', { method: 'POST', body: { email: 'testsalg@albaturist.dk', password: 'testpass1234' } });
     const sales = cookieFrom(salesLogin.response);
-    const spareLogin = await expectStatus(baseUrl, 200, '/api/login', { method: 'POST', body: { email: 'testdriver@albaturist.dk', password: 'testpass123' } });
+    const spareLogin = await expectStatus(baseUrl, 200, '/api/login', { method: 'POST', body: { email: 'testdriver@albaturist.dk', password: 'testpass1234' } });
     const spare = cookieFrom(spareLogin.response);
 
     await expectStatus(baseUrl, 400, '/api/trips', {
