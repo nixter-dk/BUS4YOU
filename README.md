@@ -37,6 +37,7 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Passager- og bagagelister viser, hvem der udførte check-in eller håndtering, hvem der modtog betalingen, og det registrerede beløb
 - Chauffører kan kun åbne ture, de selv er tildelt
 - Tildelte chauffører kan sælge en ledig billet i bussen; betalingen og kontantansvaret registreres automatisk hos den sælgende chauffør
+- Tildelte chauffører kan modtage bagage i bussen med obligatorisk foto; betalingen registreres automatisk hos den modtagende chauffør
 - Passagerregistrering, betalingsstatus og kontant beløb
 - Kontant betaling af både billet og bagage i DKK eller EUR
 - Administratorrapport med solgte billetter samt billet- og bagageindtægter opdelt i DKK og EUR

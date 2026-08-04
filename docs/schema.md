@@ -81,6 +81,7 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 - Overblikssiden returnerer kun ture, opgaver og kontantansvar, som den aktuelle rolle har adgang til; administratoren ser den samlede drift.
 - En tildelt chauffør kan udføre check-in og ændre bagagestatus.
 - Turens primære og sekundære chauffør kan sælge nye kontantbetalte billetter på deres tildelte tur. Betalingen registreres som modtaget i bussen og kontanterne knyttes automatisk til den chauffør, der udførte salget.
+- Turens primære og sekundære chauffør kan også modtage ny kontantbetalt bagage i bussen. Det obligatoriske foto gemmes på turen, og kontanterne knyttes automatisk til den chauffør, der modtog bagagen.
 - Ny bagage kan kun registreres med et dokumentationsfoto i JPG-, PNG- eller WebP-format på højst 5 MB. Fotoet er knyttet til turen og kan kun ses af personale med adgang til turen.
 - Administratoren, de tildelte chauffører og turens salgschef kan ændre betaling fra ikke betalt til betalt inden for deres arbejdssted. Betaling kan ikke ændres tilbage til ikke betalt.
 - Ved betaling i bussen knyttes kontanterne til chaufføren. Betaling ved startstedet knyttes til den tildelte salgschef.

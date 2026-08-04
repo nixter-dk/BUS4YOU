@@ -125,6 +125,13 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.ok(driverBaggage.photoFile);
     await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: sales, body: { senderName: 'Forkert bagage', phone: '77777777', pickupStopId: extraStop.id, destinationStopId: destination.id, pieces: 1, paymentStatus: 'cash', cashAmount: 50, paymentCurrency: 'DKK' } });
     await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: sales, body: { senderName: 'Bagage ved start', phone: '88888888', pickupStopId: origin.id, destinationStopId: destination.id, pieces: 1, description: 'Pakke', paymentStatus: 'cash', cashAmount: 50, paymentCurrency: 'DKK', photoName: 'pakke.png', photoType: 'image/png', photoData: baggagePhotoData } });
+    await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: driver, body: { senderName: 'Ubetalt i bus', phone: '89898989', pickupStopId: origin.id, destinationStopId: destination.id, pieces: 1, paymentStatus: 'unpaid', photoName: 'ubetalt.png', photoType: 'image/png', photoData: baggagePhotoData } });
+    const baggageInBus = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: driver, body: { senderName: 'Bagage i bussen', phone: '89898989', pickupStopId: origin.id, destinationStopId: destination.id, pieces: 1, description: 'Taske', paymentStatus: 'cash', cashAmount: 30, paymentCurrency: 'DKK', photoName: 'taske.png', photoType: 'image/png', photoData: baggagePhotoData } })).value;
+    assert.equal(baggageInBus.paymentLocation, 'bus');
+    assert.equal(baggageInBus.paymentRecordedBy, 2);
+    assert.equal(baggageInBus.cashHolderUserId, 2);
+    assert.ok(baggageInBus.photoFile);
+    await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: spare, body: { senderName: 'Ikke tildelt', phone: '90909090', pickupStopId: origin.id, destinationStopId: destination.id, pieces: 1, paymentStatus: 'cash', cashAmount: 30, paymentCurrency: 'DKK', photoName: 'afvist.png', photoType: 'image/png', photoData: baggagePhotoData } });
     const baggagePhoto = await expectStatus(baseUrl, 200, `/api/baggage/${driverBaggage.id}/photo`, { cookie: driver });
     assert.equal(baggagePhoto.response.headers.get('content-type'), 'image/png');
     await expectStatus(baseUrl, 403, `/api/baggage/${driverBaggage.id}/photo`, { cookie: spare });
@@ -158,13 +165,13 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(reimbursed.reimbursementStatus, 'paid');
 
     const driverDashboard = (await expectStatus(baseUrl, 200, '/api/dashboard', { cookie: driver })).value;
-    assert.equal(driverDashboard.cashHeld.DKK, 500);
+    assert.equal(driverDashboard.cashHeld.DKK, 530);
     assert.equal(driverDashboard.cashHeld.EUR, 60);
     const salesDashboard = (await expectStatus(baseUrl, 200, '/api/dashboard', { cookie: sales })).value;
     assert.equal(salesDashboard.cashHeld.DKK, 150);
 
-    const driverSettlement = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/settlements`, { method: 'POST', cookie: driver, body: { deliveredDKK: 500, deliveredEUR: 60 } })).value;
-    assert.deepEqual(driverSettlement.expected, { DKK: 500, EUR: 60 });
+    const driverSettlement = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/settlements`, { method: 'POST', cookie: driver, body: { deliveredDKK: 530, deliveredEUR: 60 } })).value;
+    assert.deepEqual(driverSettlement.expected, { DKK: 530, EUR: 60 });
     await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/settlements`, { method: 'PATCH', cookie: admin, body: { id: driverSettlement.id, status: 'approved' } });
     const salesSettlement = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/settlements`, { method: 'POST', cookie: sales, body: { deliveredDKK: 150, deliveredEUR: 0 } })).value;
     assert.deepEqual(salesSettlement.expected, { DKK: 150, EUR: 0 });
@@ -175,10 +182,12 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(reports.summary.paidTickets, 4);
     assert.equal(reports.summary.freeTickets, 1);
     assert.deepEqual(reports.summary.ticketRevenue, { DKK: 600, EUR: 65 });
-    assert.deepEqual(reports.summary.baggageRevenue, { DKK: 50, EUR: 20 });
+    assert.equal(reports.summary.baggage, 3);
+    assert.equal(reports.summary.paidBaggage, 3);
+    assert.deepEqual(reports.summary.baggageRevenue, { DKK: 80, EUR: 20 });
     assert.deepEqual(reports.summary.expenseTotals, { DKK: 120, EUR: 0 });
-    assert.deepEqual(reports.tripResults[0].net, { DKK: 530, EUR: 85 });
-    assert.deepEqual(reports.summary.cashAtOffice, { DKK: 650, EUR: 60 });
+    assert.deepEqual(reports.tripResults[0].net, { DKK: 560, EUR: 85 });
+    assert.deepEqual(reports.summary.cashAtOffice, { DKK: 680, EUR: 60 });
 
     const adminDashboard = (await expectStatus(baseUrl, 200, '/api/dashboard', { cookie: admin })).value;
     assert.equal(adminDashboard.cashHeld.payments, 0);
