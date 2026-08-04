@@ -143,6 +143,11 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(driverTicket.paymentLocation, 'bus');
     assert.equal(driverTicket.paymentRecordedBy, 2);
     assert.equal(driverTicket.cashHolderUserId, 2);
+    const noShowPassenger = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'PATCH', cookie: driver, body: { id: driverTicket.id, attendanceStatus: 'no_show' } })).value;
+    assert.equal(noShowPassenger.attendanceStatus, 'no_show');
+    assert.equal(noShowPassenger.checkedIn, false);
+    assert.equal(noShowPassenger.attendanceHistory.at(-1).action, 'no_show');
+    assert.equal(noShowPassenger.attendanceHistory.at(-1).userId, 2);
     const salesTripView = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}`, { cookie: sales })).value;
     assert.equal(salesTripView.passengers.length, 5);
     assert.ok(salesTripView.passengers.some(passenger => passenger.pickupStopId === extraStop.id));
@@ -245,4 +250,17 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     await new Promise(resolve => server.close(resolve));
     fs.rmSync(testRoot, { recursive: true, force: true });
   }
+});
+
+test('responsive check-in controls stay inside the visible workspace', () => {
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+
+  assert.match(styles, /\.content\{overflow-x:hidden\}/);
+  assert.match(styles, /\.table-scroll\{width:100%;max-width:100%;overflow-x:auto\}/);
+  assert.match(styles, /\.checkin-group\{overflow:visible\}/);
+  assert.match(styles, /@media\(min-width:701px\)\{\.checkin-more\.open-up>div\{top:auto;bottom:44px\}\}/);
+  assert.match(styles, /\.checkin-more>div\{position:fixed;left:12px;right:12px;top:auto;bottom:calc\(80px \+ env\(safe-area-inset-bottom\)\)/);
+  assert.match(app, /panelRect\.bottom>window\.innerHeight-12\|\|panelRect\.bottom>groupRect\.bottom-8/);
+  assert.match(app, /if\(other!==menu\)other\.open=false/);
 });

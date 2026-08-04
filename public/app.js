@@ -470,6 +470,17 @@ renderCheckInMode=function(){
   };
   search.oninput=applyFilters;
   $$('#tabContent [data-checkin-filter]').forEach(button=>button.onclick=()=>{state.checkInListFilter=button.dataset.checkinFilter;applyFilters();sections.scrollIntoView({behavior:'smooth',block:'start'})});
+  $$('#tabContent .checkin-more').forEach(menu=>menu.addEventListener('toggle',()=>{
+    if(!menu.open){menu.classList.remove('open-up');return}
+    $$('#tabContent .checkin-more').forEach(other=>{if(other!==menu)other.open=false});
+    menu.classList.remove('open-up');
+    if(window.matchMedia('(min-width:701px)').matches)requestAnimationFrame(()=>{
+      const panel=menu.querySelector('div'),group=menu.closest('.checkin-group');
+      if(!panel||!group)return;
+      const panelRect=panel.getBoundingClientRect(),groupRect=group.getBoundingClientRect();
+      menu.classList.toggle('open-up',panelRect.bottom>window.innerHeight-12||panelRect.bottom>groupRect.bottom-8);
+    });
+  }));
   applyFilters();
 };
 
