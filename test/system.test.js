@@ -101,6 +101,20 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(trip.seatCount, 84);
     assert.equal(trip.durationMinutes, 720);
 
+    const emptyTrip = (await expectStatus(baseUrl, 201, '/api/trips', {
+      method: 'POST', cookie: admin, body: {
+        title: 'Tom tur til sletning',
+        departureAt: new Date(Date.now() + 172800000).toISOString(),
+        originId: origin.id,
+        destinationId: destination.id,
+        busId: doubleBus.id,
+        primaryDriverId: 2
+      }
+    })).value;
+    await expectStatus(baseUrl, 403, `/api/trips/${emptyTrip.id}`, { method: 'DELETE', cookie: driver });
+    await expectStatus(baseUrl, 200, `/api/trips/${emptyTrip.id}`, { method: 'DELETE', cookie: admin });
+    await expectStatus(baseUrl, 404, `/api/trips/${emptyTrip.id}`, { cookie: admin });
+
     await expectStatus(baseUrl, 200, `/api/trips/${trip.id}`, { cookie: driver });
     await expectStatus(baseUrl, 200, `/api/trips/${trip.id}`, { cookie: sales });
     await expectStatus(baseUrl, 403, `/api/trips/${trip.id}`, { cookie: spare });
@@ -203,6 +217,16 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
 
     const adminDashboard = (await expectStatus(baseUrl, 200, '/api/dashboard', { cookie: admin })).value;
     assert.equal(adminDashboard.cashHeld.payments, 0);
+    await expectStatus(baseUrl, 403, `/api/trips/${trip.id}`, { method: 'PATCH', cookie: driver, body: { status: 'cancelled', cancellationReason: 'Ikke tilladt' } });
+    await expectStatus(baseUrl, 400, `/api/trips/${trip.id}`, { method: 'PATCH', cookie: admin, body: { status: 'cancelled', cancellationReason: '' } });
+    const cancelledTrip = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}`, { method: 'PATCH', cookie: admin, body: { status: 'cancelled', cancellationReason: 'Afgangen er aflyst af driften' } })).value;
+    assert.equal(cancelledTrip.status, 'cancelled');
+    assert.equal(cancelledTrip.cancellationReason, 'Afgangen er aflyst af driften');
+    assert.equal(cancelledTrip.cancelledByName, 'Administrator');
+    assert.ok(cancelledTrip.cancelledAt);
+    await expectStatus(baseUrl, 409, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Efter annullering', phone: '10101010', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'unpaid', seatNumber: 5 } });
+    await expectStatus(baseUrl, 409, `/api/trips/${trip.id}/passengers`, { method: 'PATCH', cookie: driver, body: { id: unpaidPassenger.id, checkedIn: true } });
+    await expectStatus(baseUrl, 409, `/api/trips/${trip.id}`, { method: 'DELETE', cookie: admin });
     await expectStatus(baseUrl, 409, `/api/stops/${origin.id}`, { method: 'DELETE', cookie: admin });
     await expectStatus(baseUrl, 409, `/api/buses/${doubleBus.id}`, { method: 'DELETE', cookie: admin });
     await expectStatus(baseUrl, 409, '/api/drivers/2', { method: 'DELETE', cookie: admin });

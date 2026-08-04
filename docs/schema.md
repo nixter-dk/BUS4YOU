@@ -17,6 +17,7 @@ Den lokale MVP gemmer nedenstående relationelle struktur som JSON. ID-reference
 ### trips
 
 - `id`, `title`, `departureAt`, `durationMinutes`, `status`
+- `cancellationReason`, `cancelledAt`, `cancelledBy` ved annullering
 - `originId`, `destinationId`, `busId`
 - `basePrice`, `seatCount` (1–84, kun administratoren kan ændre værdien)
 - `primaryDriverId`, `secondaryDriverId`, `salesManagerId`
@@ -73,6 +74,8 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 - En chauffør kan kun læse en tur, når brugerens ID er `primaryDriverId` eller `secondaryDriverId`.
 - Salgschefer kan læse alle ture, men kan kun betjene passagerer og bagage ved den enkelte turs startsted.
 - Kun administratoren kan ændre turens chauffører, og kun når ingen passager på turen er checket ind.
+- Kun administratoren kan annullere en tur. Begrundelse, tidspunkt og administrator gemmes, og turens historik bevares.
+- Kun en tur uden passagerer, bagage, udgifter og kontantafstemninger kan slettes permanent. Ellers skal turen annulleres.
 - Kun administratoren kan oprette ture og steder. Den tildelte salgschef kan oprette passagerer og bagage fra turens startsted.
 - Kalenderen bruger `departureAt` og `durationMinutes` til at advare om overlappende brug af samme bus eller chauffør.
 - Kun administratoren kan redigere/slette opsamlingssteder og ændre bussens sædekapacitet.

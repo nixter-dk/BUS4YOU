@@ -34,6 +34,8 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Passagerens opsamlingssted vælges uafhængigt af turens startpunkt, så administratoren og de tildelte chauffører kan vælge mellem alle oprettede opsamlingssteder
 - To chauffører pr. tur, hvor én er primær
 - Administratoren kan skifte turens primære og sekundære chauffør, indtil den første passager er checket ind
+- Administratoren kan annullere en tur med obligatorisk begrundelse; al historik, økonomi, passagerer og bagage bevares
+- En tom tur kan slettes permanent af administratoren, men sletning låses automatisk, så snart turen har passagerer, bagage, udgifter eller kontantafstemninger
 - Salgschefer kan se alle ture og håndtere check-in, billetsalg og bagage ved den enkelte turs startsted
 - Kontantbetalinger ved startstedet registreres hos den salgschef, som modtog dem, og indgår i personens kontantafstemning
 - Passager- og bagagelister viser, hvem der udførte check-in eller håndtering, hvem der modtog betalingen, og det registrerede beløb

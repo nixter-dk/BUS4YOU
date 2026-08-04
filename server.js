@@ -97,6 +97,7 @@ function tripView(t) {
     primaryDriver: db.users.find(u => u.id === t.primaryDriverId)?.name || null,
     secondaryDriver: db.users.find(u => u.id === t.secondaryDriverId)?.name || null,
     salesManager: db.users.find(u => u.id === t.salesManagerId)?.name || null,
+    cancelledByName: userName(t.cancelledBy),
     counts: { passengers: passengers.length, checkedIn: passengers.filter(p => p.checkedIn).length, baggage: baggage.length, onboard: baggage.filter(b => b.status === 'onboard').length, unpaid: [...passengers,...baggage].filter(record=>record.paymentStatus==='unpaid').length, pendingExpenses:expenses.filter(expense=>(expense.status||'pending')==='pending').length, missingReceipts:expenses.filter(expense=>!expense.receiptFile).length, unsettledCash:unsettledCash.length }
   };
 }
@@ -332,8 +333,27 @@ async function api(req, res, pathname) {
   const trip = db.trips.find(t => t.id === Number(match[1])); if (!trip) return fail(res, 404, 'Turen findes ikke');
   if (!allowedTrip(user, trip)) return fail(res, 403, 'Du er ikke tildelt denne tur');
   const part = match[2];
+  if (!part && req.method === 'DELETE') {
+    if (user.role !== 'admin') return fail(res,403,'Kun administratoren kan slette en tur');
+    const linked = {
+      passengers: db.passengers.some(record => record.tripId === trip.id),
+      baggage: db.baggage.some(record => record.tripId === trip.id),
+      expenses: db.expenses.some(record => record.tripId === trip.id),
+      settlements: db.cashSettlements.some(record => record.tripId === trip.id)
+    };
+    if (Object.values(linked).some(Boolean)) return fail(res,409,'Turen har registrerede passagerer, bagage, udgifter eller kontantafstemninger og skal derfor annulleres i stedet');
+    db.trips = db.trips.filter(record => record.id !== trip.id); saveDb(); return json(res,200,{ok:true});
+  }
   if (!part && req.method === 'PATCH') {
     const data = await body(req);
+    if (Object.prototype.hasOwnProperty.call(data,'status')) {
+      if (user.role !== 'admin') return fail(res,403,'Kun administratoren kan annullere en tur');
+      if (data.status !== 'cancelled') return fail(res,400,'Turen kan kun ændres til annulleret');
+      if (trip.status === 'cancelled') return fail(res,409,'Turen er allerede annulleret');
+      const reason = String(data.cancellationReason || '').trim(); if (reason.length < 3) return fail(res,400,'Skriv en begrundelse for annulleringen');
+      trip.status='cancelled';trip.cancellationReason=reason;trip.cancelledAt=new Date().toISOString();trip.cancelledBy=user.id;saveDb();return json(res,200,tripView(trip));
+    }
+    if (trip.status === 'cancelled') return fail(res,409,'Turen er annulleret og kan ikke ændres');
     if (data.completedStopId) {
       const stopId = Number(data.completedStopId); if (!db.stops.some(s => s.id === stopId)) return fail(res,400,'Opsamlingsstedet findes ikke');
       if(user.role==='sales_manager'&&stopId!==trip.originId)return fail(res,403,'Salgschefen kan kun afslutte turens startsted');
@@ -376,6 +396,7 @@ async function api(req, res, pathname) {
     return json(res,200,{trip:tripView(trip),passengers:db.passengers.filter(passenger=>passenger.tripId===trip.id&&startOnly(passenger)).map(passengerRecordView),baggage:db.baggage.filter(item=>item.tripId===trip.id&&startOnly(item)).map(baggageRecordView),expenses,settlements,seats:seatMap(trip.id)});
   }
   if (part === 'seats' && req.method === 'GET') return json(res, 200, seatMap(trip.id));
+  if (trip.status === 'cancelled' && ['passengers','baggage'].includes(part)) return fail(res,409,'Turen er annulleret og kan ikke længere bruges til salg eller check-in');
   if (part === 'passengers' && req.method === 'POST') {
     if (!['admin','sales_manager','driver'].includes(user.role)) return fail(res, 403, 'Du har ikke adgang til at oprette passagerer');
     const data = await body(req); const seat = seatMap(trip.id).find(s => s.number === Number(data.seatNumber));
