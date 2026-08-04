@@ -36,6 +36,7 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Kontantbetalinger ved startstedet registreres hos den salgschef, som modtog dem, og indgår i personens kontantafstemning
 - Passager- og bagagelister viser, hvem der udførte check-in eller håndtering, hvem der modtog betalingen, og det registrerede beløb
 - Chauffører kan kun åbne ture, de selv er tildelt
+- Tildelte chauffører kan sælge en ledig billet i bussen; betalingen og kontantansvaret registreres automatisk hos den sælgende chauffør
 - Passagerregistrering, betalingsstatus og kontant beløb
 - Kontant betaling af både billet og bagage i DKK eller EUR
 - Administratorrapport med solgte billetter samt billet- og bagageindtægter opdelt i DKK og EUR
