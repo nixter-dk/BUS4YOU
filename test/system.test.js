@@ -179,7 +179,9 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Gratis Passager', phone: '33333333', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'free', freeTicketReason: 'Test', seatNumber: 2 } });
     await expectStatus(baseUrl, 409, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Dublet', phone: '44444444', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'unpaid', seatNumber: 1 } });
     await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: driver, body: { name: 'Ikke tilladt', phone: '55555555', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'unpaid', seatNumber: 3 } });
-    await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: sales, body: { name: 'Forkert stop', phone: '55555555', pickupStopId: extraStop.id, destinationStopId: destination.id, paymentStatus: 'cash', paymentCurrency: 'DKK', cashAmount: 100, seatNumber: 3 } });
+    const intermediateStopSale = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: sales, body: { name: 'Opsamling undervejs', phone: '55555555', pickupStopId: extraStop.id, destinationStopId: destination.id, paymentStatus: 'pay_dk', seatNumber: 3 } })).value;
+    assert.equal(intermediateStopSale.pickupStopId, extraStop.id);
+    await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: sales, body: { id: intermediateStopSale.id, deletionReason: 'Fjerner testregistreringen igen' } });
     await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: sales, body: { name: 'Gratis fra salg', phone: '55555555', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'free', seatNumber: 3 } });
     await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: sales, body: { name: 'Startsted Passager', phone: '66666666', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'cash', paymentCurrency: 'DKK', cashAmount: 100, seatNumber: 3 } });
     const driverTicket = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: driver, body: { name: 'Billet i bussen', phone: '67676767', pickupStopId: extraStop.id, destinationStopId: destination.id, paymentStatus: 'cash', paymentCurrency: 'EUR', cashAmount: 40, seatNumber: 4 } })).value;
@@ -400,10 +402,14 @@ test('responsive check-in controls stay inside the visible workspace', () => {
   assert.match(app, /STARTSTED<\/span><strong>Kun afgang/);
   assert.match(app, /Her registreres kun afgangstid/);
   assert.match(app, /function openPictureSeatPicker\(form\)/);
+  assert.match(app, /picture-left-scroll/);
+  assert.match(app, /Alle oprettede opsamlingssteder kan vælges – også stoppesteder undervejs/);
   assert.match(app, /Sædeplan – Dobbeltdækkerbus/);
   assert.match(app, /pictureTripInfo\(\).*pictureLegend\(\)/s);
   assert.match(app, /pictureUpperDeck\(upper,pendingSeat\).*pictureLowerDeck\(lower,pendingSeat\)/s);
   assert.match(styles, /\.seat-picker-dialog\{inset:8px;max-width:none/);
+  assert.match(styles, /\.picture-left\{grid-template-rows:minmax\(0,1fr\) auto;align-content:stretch;overflow:hidden\}/);
+  assert.match(styles, /\.picture-continue\{position:relative;z-index:2;width:100%/);
   assert.match(styles, /@media\(max-width:950px\)\{\.seat-picker-dialog\{inset:0;width:100%;height:100%/);
 });
 
