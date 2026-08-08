@@ -71,6 +71,7 @@ test('production mode enforces secure startup, origin checks and persistent sess
     assert.match(cookie, /HttpOnly/);
     assert.match(cookie, /SameSite=Strict/);
     assert.match(cookie, /Secure/);
+    assert.doesNotMatch(cookie, /Max-Age=/);
 
     const stored = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
     assert.equal(stored.users.length, 1);
@@ -84,6 +85,16 @@ test('production mode enforces secure startup, origin checks and persistent sess
     });
     assert.equal(logout.status, 200);
     assert.equal(JSON.parse(fs.readFileSync(dbFile, 'utf8')).sessions.length, 0);
+
+    const rememberedLogin = await fetch(`${baseUrl}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: baseUrl },
+      body: JSON.stringify({ email: 'production@example.com', password: 'meget-lang-test-adgangskode', rememberMe: true })
+    });
+    assert.equal(rememberedLogin.status, 200);
+    assert.match(rememberedLogin.headers.get('set-cookie') || '', /Max-Age=2592000/);
+    const rememberedCookie=(rememberedLogin.headers.get('set-cookie')||'').split(';')[0];
+    await fetch(`${baseUrl}/api/logout`, { method:'POST',headers:{Origin:baseUrl,Cookie:rememberedCookie} });
 
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const wrong = await fetch(`${baseUrl}/api/login`, {

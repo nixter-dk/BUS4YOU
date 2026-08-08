@@ -1,5 +1,4 @@
-data/db.json
-data/uploads/
+data/
 .env
 .env.production
 node_modules/
