@@ -256,6 +256,13 @@ function hasPendingSettlementReference(reference) {
 function hasPendingTransferReference(reference) {
   return db.cashTransfers.some(transfer => transfer.status === 'pending' && transfer.paymentRefs.includes(reference));
 }
+function hasCashAuditReference(reference) {
+  return db.cashSettlements.some(settlement => (settlement.paymentRefs || []).includes(reference)) || db.cashTransfers.some(transfer => (transfer.paymentRefs || []).includes(reference));
+}
+function recordDeletion(trip, kind, record, user, reason) {
+  trip.deletionHistory = trip.deletionHistory || [];
+  trip.deletionHistory.push({ kind, record: { ...record }, deletedAt: new Date().toISOString(), deletedBy: user.id, deletedByName: user.name, reason });
+}
 function cashRecordByReference(reference, tripId) {
   const [kind,rawId] = String(reference).split(':');
   const collection = kind === 'passenger' ? db.passengers : kind === 'baggage' ? db.baggage : null;
@@ -629,6 +636,13 @@ async function api(req, res, pathname) {
     const passenger = { id: id(), tripId: trip.id, name: data.name.trim(), ticketNumber, phone: data.phone.trim(), pickupStopId: Number(data.pickupStopId), destinationStopId: Number(data.destinationStopId), paymentStatus: data.paymentStatus, paymentCurrency, cashAmount: data.paymentStatus === 'cash' ? Number(data.cashAmount || 0) : 0, paymentLocation, paymentRecordedAt: ['cash','free'].includes(data.paymentStatus) ? new Date().toISOString() : null, paymentRecordedBy: ['cash','free'].includes(data.paymentStatus) ? user.id : null, cashHolderUserId, createdBy:user.id, freeTicketReason: data.paymentStatus === 'free' ? String(data.freeTicketReason || '').trim() : '', seatNumber: seat.number, seatType: seat.type, seatSurcharge: seat.surcharge, totalPrice: data.paymentStatus === 'free' ? 0 : trip.basePrice + seat.surcharge, checkedIn: false, attendanceStatus: 'pending', checkedInAt: null, checkedInBy: null };
     db.passengers.push(passenger); await saveDb(); return json(res, 201, passengerRecordView(passenger));
   }
+  if (part === 'passengers' && req.method === 'DELETE') {
+    if (!['admin','sales_manager','driver'].includes(user.role)) return fail(res,403,'Du har ikke adgang til at slette passagerer');
+    const data=await body(req),passenger=db.passengers.find(candidate=>candidate.id===Number(data.id)&&candidate.tripId===trip.id);if(!passenger)return fail(res,404,'Passageren findes ikke');
+    const reason=String(data.deletionReason||'').trim();if(reason.length<3)return fail(res,400,'Skriv kort, hvorfor passageren slettes');
+    const reference=`passenger:${passenger.id}`;if(passenger.cashHandedOverAt||hasCashAuditReference(reference))return fail(res,409,'Passagerens betaling indgår i en kontantoverførsel eller afstemning og kan derfor ikke slettes');
+    recordDeletion(trip,'passenger',passenger,user,reason);db.passengers=db.passengers.filter(candidate=>candidate.id!==passenger.id);await saveDb();return json(res,200,{ok:true,freedSeatNumber:passenger.seatNumber});
+  }
   if (part === 'passengers' && req.method === 'PATCH') {
     const data = await body(req); const passenger = db.passengers.find(p => p.id === Number(data.id) && p.tripId === trip.id); if (!passenger) return fail(res, 404, 'Passageren findes ikke');
     if (data.edit === true) {
@@ -685,6 +699,16 @@ async function api(req, res, pathname) {
     const createdAt=new Date().toISOString();
     const item = { id: id(), tripId: trip.id, senderName: data.senderName.trim(), recipientName: data.recipientName.trim(), phone: data.phone.trim(), pickupStopId: Number(data.pickupStopId), destinationStopId: Number(data.destinationStopId), pieces: Number(data.pieces), description: String(data.description || '').trim(), photoName, photoType, photoFile, paymentStatus: data.paymentStatus, paymentCurrency, cashAmount: data.paymentStatus === 'cash' ? Number(data.cashAmount || 0) : 0, paymentLocation: data.paymentStatus === 'cash' ? (user.role==='sales_manager'?'departure':user.role==='driver'?'bus':'shop') : null, paymentRecordedAt: data.paymentStatus === 'cash' ? createdAt : null, paymentRecordedBy: data.paymentStatus === 'cash' ? user.id : null, cashHolderUserId: data.paymentStatus === 'cash'&&['sales_manager','driver'].includes(user.role)?user.id:null, notes: String(data.notes || '').trim(), status: 'registered', createdAt, createdBy:user.id, statusUpdatedAt:createdAt, statusUpdatedBy:user.id, baggageHistory:[{action:'registered',at:createdAt,userId:user.id}] };
     db.baggage.push(item); await saveDb(); return json(res, 201, baggageRecordView(item));
+  }
+  if (part === 'baggage' && req.method === 'DELETE') {
+    if (!['admin','sales_manager','driver'].includes(user.role)) return fail(res,403,'Du har ikke adgang til at slette bagage');
+    const data=await body(req),item=db.baggage.find(candidate=>candidate.id===Number(data.id)&&candidate.tripId===trip.id);if(!item)return fail(res,404,'Bagagen findes ikke');
+    if(user.role==='sales_manager'&&item.pickupStopId!==trip.originId)return fail(res,403,'Salgschefen kan kun slette bagage ved turens startsted');
+    const reason=String(data.deletionReason||'').trim();if(reason.length<3)return fail(res,400,'Skriv kort, hvorfor bagagen slettes');
+    const reference=`baggage:${item.id}`;if(item.cashHandedOverAt||hasCashAuditReference(reference))return fail(res,409,'Bagagens betaling indgår i en kontantoverførsel eller afstemning og kan derfor ikke slettes');
+    recordDeletion(trip,'baggage',item,user,reason);db.baggage=db.baggage.filter(candidate=>candidate.id!==item.id);await saveDb();
+    if(item.photoFile){const photoPath=path.join(UPLOAD_DIR,path.basename(item.photoFile));try{if(fs.existsSync(photoPath))fs.unlinkSync(photoPath)}catch(error){console.error('Kunne ikke fjerne slettet bagagefoto:',error.message)}}
+    return json(res,200,{ok:true});
   }
   if (part === 'baggage' && req.method === 'PATCH') {
     const data = await body(req); const item = db.baggage.find(b => b.id === Number(data.id) && b.tripId === trip.id); if (!item) return fail(res, 404, 'Bagagen findes ikke');

@@ -151,6 +151,7 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
         primaryDriverId: 2
       }
     })).value;
+    assert.equal(emptyTrip.basePrice, 0);
     await expectStatus(baseUrl, 403, `/api/trips/${emptyTrip.id}`, { method: 'DELETE', cookie: driver });
     await expectStatus(baseUrl, 200, `/api/trips/${emptyTrip.id}`, { method: 'DELETE', cookie: admin });
     await expectStatus(baseUrl, 404, `/api/trips/${emptyTrip.id}`, { cookie: admin });
@@ -199,6 +200,13 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     const salesTripView = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}`, { cookie: sales })).value;
     assert.equal(salesTripView.passengers.length, 5);
     assert.ok(salesTripView.passengers.some(passenger => passenger.pickupStopId === extraStop.id));
+    const mistakenPassenger = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Oprettet ved fejl', phone: '68680000', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'unpaid', seatNumber: 6 } })).value;
+    await expectStatus(baseUrl, 400, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: driver, body: { id: mistakenPassenger.id } });
+    const deletedPassenger = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: driver, body: { id: mistakenPassenger.id, deletionReason: 'Passageren blev oprettet ved en fejl' } })).value;
+    assert.equal(deletedPassenger.freedSeatNumber, 6);
+    const seatsAfterPassengerDeletion = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/seats`, { cookie: driver })).value;
+    assert.equal(seatsAfterPassengerDeletion.find(seat => seat.number === 6).passengerId, null);
+    await expectStatus(baseUrl, 404, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: driver, body: { id: mistakenPassenger.id, deletionReason: 'Forsøger igen' } });
     await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: spare, body: { name: 'Ikke tildelt chauffør', phone: '68686868', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'cash', paymentCurrency: 'DKK', cashAmount: 100, seatNumber: 5 } });
 
     const baggagePhotoData = `data:image/png;base64,${Buffer.from('busops-baggage-photo').toString('base64')}`;
@@ -207,6 +215,12 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     const driverBaggage = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: admin, body: { senderName: 'Bagage A', recipientName: 'Modtager B', phone: '77777777', pickupStopId: origin.id, destinationStopId: destination.id, pieces: 2, description: 'Kufferter', paymentStatus: 'pay_mk', photoName: 'bagage.png', photoType: 'image/png', photoData: largeBaggagePhotoData } })).value;
     assert.ok(driverBaggage.photoFile);
     assert.equal(driverBaggage.paymentStatus, 'pay_mk');
+    const mistakenBaggage = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: admin, body: { senderName: 'Fejlbagage', recipientName: 'Forkert modtager', phone: '70000001', pickupStopId: origin.id, destinationStopId: destination.id, pieces: 1, paymentStatus: 'pay_dk', photoName: 'fejl.png', photoType: 'image/png', photoData: baggagePhotoData } })).value;
+    await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/baggage`, { method: 'DELETE', cookie: secondaryDriver, body: { id: mistakenBaggage.id, deletionReason: 'Bagagen blev oprettet ved en fejl' } });
+    await expectStatus(baseUrl, 404, `/api/baggage/${mistakenBaggage.id}/photo`, { cookie: admin });
+    const tripAfterDeletions = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}`, { cookie: admin })).value;
+    assert.equal(tripAfterDeletions.trip.deletionHistory.at(-2).kind, 'passenger');
+    assert.equal(tripAfterDeletions.trip.deletionHistory.at(-1).kind, 'baggage');
     await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: sales, body: { senderName: 'Forkert bagage', recipientName: 'Modtager C', phone: '77777777', pickupStopId: extraStop.id, destinationStopId: destination.id, pieces: 1, paymentStatus: 'cash', cashAmount: 50, paymentCurrency: 'DKK' } });
     await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: sales, body: { senderName: 'Bagage ved start', recipientName: 'Modtager D', phone: '88888888', pickupStopId: origin.id, destinationStopId: destination.id, pieces: 1, description: 'Pakke', paymentStatus: 'cash', cashAmount: 50, paymentCurrency: 'DKK', photoName: 'pakke.png', photoType: 'image/png', photoData: baggagePhotoData } });
     await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: driver, body: { senderName: 'Ubetalt i bus', recipientName: 'Modtager E', phone: '89898989', pickupStopId: origin.id, destinationStopId: destination.id, pieces: 1, paymentStatus: 'unpaid', photoName: 'ubetalt.png', photoType: 'image/png', photoData: baggagePhotoData } });
@@ -273,6 +287,7 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     await expectStatus(baseUrl, 409, `/api/trips/${trip.id}/settlements`, { method: 'POST', cookie: driver, body: { deliveredDKK: 530, deliveredEUR: 60 } });
     const acceptedTransfer = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/transfers`, { method: 'PATCH', cookie: secondaryDriver, body: { id: transfer.id, status: 'accepted' } })).value;
     assert.equal(acceptedTransfer.status, 'accepted');
+    await expectStatus(baseUrl, 409, `/api/trips/${trip.id}/baggage`, { method: 'DELETE', cookie: secondaryDriver, body: { id: baggageInBus.id, deletionReason: 'Må ikke bryde kontanthistorikken' } });
     const transferredTrip = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}`, { cookie: secondaryDriver })).value;
     assert.equal(transferredTrip.baggage.find(item => item.id === baggageInBus.id).cashHolderUserId, 3);
 
@@ -338,6 +353,7 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
 test('responsive check-in controls stay inside the visible workspace', () => {
   const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
 
   assert.match(styles, /\.content\{overflow-x:hidden\}/);
   assert.match(styles, /\.table-scroll\{width:100%;max-width:100%;overflow-x:auto\}/);
@@ -359,6 +375,13 @@ test('responsive check-in controls stay inside the visible workspace', () => {
   assert.match(app, /data-sheet-action="uncheck"/);
   assert.match(app, /Fjern check-in/);
   assert.match(app, /state\.currentCheckinStop=passenger\.pickupStopId;state\.checkInListFilter='pending'/);
+  assert.doesNotMatch(app, /Forventet varighed/);
+  assert.doesNotMatch(app, /name="durationMinutes"/);
+  assert.doesNotMatch(html, /Grundpris/);
+  assert.doesNotMatch(html, /name="basePrice"/);
+  assert.match(app, /data-delete-record="\$\{kind\}:\$\{id\}"/);
+  assert.match(app, /method:'DELETE',body:JSON\.stringify\(\{id,deletionReason:reason\}\)/);
+  assert.match(styles, /\.deletion-zone\{/);
   assert.match(styles, /@media\(max-width:700px\).*\.checkin-actions\{display:none!important\}/s);
   assert.match(styles, /\.checkin-card\{grid-template-columns:62px minmax\(180px,1fr\)\}\.checkin-payment,\.checkin-actions\{display:none!important\}/);
   assert.match(app, /<span>Betaling <b>\$\{paymentStatus\}<\/b><\/span>/);
