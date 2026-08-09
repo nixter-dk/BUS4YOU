@@ -377,6 +377,10 @@ test('responsive check-in controls stay inside the visible workspace', () => {
   assert.match(app, /data-sheet-action="uncheck"/);
   assert.match(app, /Fjern check-in/);
   assert.match(app, /state\.currentCheckinStop=passenger\.pickupStopId;state\.checkInListFilter='pending'/);
+  assert.match(app, /Alle passagerer · hele turen/);
+  assert.match(app, /function renderAllPassengerCheckIn\(\)/);
+  assert.match(app, /state\.checkInAllPassengers=event\.target\.value==='all'/);
+  assert.match(app, /Alle opsamlingssteder vises samlet/);
   assert.doesNotMatch(app, /Forventet varighed/);
   assert.doesNotMatch(app, /name="durationMinutes"/);
   assert.doesNotMatch(html, /Grundpris/);

@@ -940,4 +940,30 @@ async function performManualUncheck(id){const passenger=state.trip.passengers.fi
 const showPassengerActionSheetBeforeManualUncheck=showPassengerActionSheet;
 showPassengerActionSheet=function(id){showPassengerActionSheetBeforeManualUncheck(id);const passenger=state.trip.passengers.find(item=>item.id===id),grid=$('.passenger-action-grid');if(!passenger?.checkedIn||!grid)return;grid.insertAdjacentHTML('afterbegin','<button data-sheet-action="uncheck" class="warning"><i>↶</i><strong>Fjern check-in</strong><small>Flyt passageren tilbage til afventer</small></button>');grid.querySelector('[data-sheet-action="uncheck"]').onclick=()=>{$('#modal').close();performManualUncheck(id)}};
 
+// Check-in can switch between the current pickup stop and every passenger on the trip.
+function renderAllPassengerCheckIn(){
+  const passengers=state.trip.passengers,checked=passengers.filter(passenger=>passenger.checkedIn).length,pending=passengers.filter(passenger=>!passenger.checkedIn&&passenger.attendanceStatus!=='no_show').length,noShow=passengers.filter(passenger=>passenger.attendanceStatus==='no_show').length,problems=passengers.filter(passenger=>isPendingPayment(passenger)||passenger.attendanceStatus==='no_show'),pct=passengers.length?Math.round(checked/passengers.length*100):0;
+  const progress=$('.checkin-progress');if(progress)progress.innerHTML=`<span><b>${checked}</b> af ${passengers.length} på hele turen</span><div><i style="width:${pct}%"></i></div><small>Alle opsamlingssteder vises samlet</small>`;
+  const complete=$('#completeStop');if(complete){complete.hidden=true;complete.disabled=true}
+  const alerts=$$('.checkin-alerts>div strong');if(alerts[0])alerts[0].textContent=pending;if(alerts[1])alerts[1].textContent=passengers.filter(isPendingPayment).length;if(alerts[2])alerts[2].textContent=noShow;
+  const toggle=$('#toggleProblems');if(toggle)toggle.textContent=`Vis ${problems.length} opmærksomhedspunkter`;
+  const problemPanel=$('#problemPanel');if(problemPanel)problemPanel.innerHTML=problems.map(passenger=>`<button data-focus-passenger="${passenger.id}"><strong>${esc(passenger.name)}</strong><span>${passenger.attendanceStatus==='no_show'?'Udeblevet':paymentStatusLabel(passenger.paymentStatus)}</span></button>`).join('')||'<p>Ingen problemer på turen</p>';
+  const sections=$('.checkin-sections');if(sections)sections.innerHTML=checkinSection('Afventer',passengers.filter(passenger=>!passenger.checkedIn&&passenger.attendanceStatus!=='no_show'),'pending')+checkinSection('Checket ind',passengers.filter(passenger=>passenger.checkedIn),'checked')+checkinSection('Udeblevet',passengers.filter(passenger=>passenger.attendanceStatus==='no_show'),'noshow');
+}
+const renderCheckInBeforeAllPassengers=renderCheckInMode;
+renderCheckInMode=function(){
+  renderCheckInBeforeAllPassengers();
+  const select=$('#checkinStop');if(!select)return;
+  select.insertAdjacentHTML('afterbegin',`<option value="all" ${state.checkInAllPassengers?'selected':''}>Alle passagerer · hele turen</option>`);
+  if(state.checkInAllPassengers){
+    select.value='all';select.closest('div')?.querySelector('.current-stop-time')?.remove();renderAllPassengerCheckIn();
+    const stopIds=[...new Set(state.trip.passengers.map(passenger=>passenger.pickupStopId))];wireCheckInMode(stopIds);
+    $$('[data-passenger-actions]').forEach(button=>button.onclick=()=>showPassengerActionSheet(Number(button.dataset.passengerActions)));
+    $$('[data-checkin-card]').forEach(card=>{const passenger=state.trip.passengers.find(item=>item.id===Number(card.dataset.checkinCard));if(passenger?.ticketNumber)card.dataset.search=`${card.dataset.search||''} ${passenger.ticketNumber.toLowerCase()}`});
+  }
+  select.onchange=event=>{state.checkInAllPassengers=event.target.value==='all';if(!state.checkInAllPassengers)state.currentCheckinStop=Number(event.target.value);renderTrip()};
+};
+const openTripBeforeAllPassengerCheckIn=openTrip;
+openTrip=async function(id){state.checkInAllPassengers=false;return openTripBeforeAllPassengerCheckIn(id)};
+
 try{setAppLanguage(localStorage.getItem('busopsLanguage')||'da')}catch(_){setAppLanguage('da')}
