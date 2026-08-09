@@ -427,6 +427,7 @@ test('official Alba Turist logo is bundled into the login background', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
   const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+  const translations = fs.readFileSync(path.join(__dirname, '..', 'public', 'translations.js'), 'utf8');
   const logo = path.join(__dirname, '..', 'public', 'assets', 'alba-turist-logo.jpg');
   assert.match(html, /\/assets\/alba-turist-logo\.jpg/);
   assert.match(css, /login-official-logo/);
@@ -442,6 +443,12 @@ test('official Alba Turist logo is bundled into the login background', () => {
   assert.match(app, /Deutsch/);
   assert.match(app, /English/);
   assert.match(app, /MutationObserver/);
+  assert.match(html, /translations\.js.*app\.js/);
+  assert.match(app, /BUSOPS_TRANSLATIONS/);
+  assert.match(app, /dynamicTranslationPatterns/);
+  assert.match(translations, /Busser i flåden.*Busse in der Flotte.*Buses in the fleet/);
+  assert.match(translations, /AKTUELT OPSAMLINGSSTED.*AKTUELLE HALTESTELLE.*CURRENT PICKUP POINT/);
+  assert.match(translations, /Registrer udgift.*Ausgabe erfassen.*Record expense/);
   assert.match(app, /accountNav\.onclick=\(\)=>renderAccount\(\)/);
   assert.match(app, /function keepActiveControlVisible/);
   assert.match(app, /\.tabs \.tab\.active/);
