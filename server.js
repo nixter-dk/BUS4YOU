@@ -234,7 +234,7 @@ function seatMap(tripId) {
     const assignedBus = trip?.busId ? db.buses.find(b => b.id === trip.busId) : null;
     const isDouble = assignedBus?.type === 'double' || trip?.seatCount === 84;
     const isFront = isDouble ? number >= 23 && number <= 26 : number <= 4;
-    const isTable = isDouble ? number >= 1 && number <= 8 : [13,14,17,18,21,22,25,26].includes(number);
+    const isTable = isDouble ? number >= 5 && number <= 12 : [13,14,17,18,21,22,25,26].includes(number);
     const lowerDeckSeats = isDouble ? 22 : trip?.seatCount;
     return { number, deck: number <= lowerDeckSeats ? 'lower' : 'upper', type: isFront ? 'front' : isTable ? 'table' : 'standard', surcharge: isFront ? 100 : isTable ? 75 : 0, passengerId: taken.get(number) || null };
   });

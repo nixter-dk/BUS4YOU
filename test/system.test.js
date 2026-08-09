@@ -167,8 +167,10 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(seats.filter(seat => seat.deck === 'lower').length, 22);
     assert.equal(seats.filter(seat => seat.deck === 'upper').length, 62);
     assert.equal(seats.filter(seat => seat.type === 'table').length, 8);
+    assert.deepEqual(seats.filter(seat => seat.type === 'table').map(seat => seat.number), [5,6,7,8,9,10,11,12]);
     assert.equal(seats.filter(seat => seat.type === 'front').length, 4);
-    assert.equal(seats.find(seat => seat.number === 1).surcharge, 75);
+    assert.equal(seats.find(seat => seat.number === 1).surcharge, 0);
+    assert.equal(seats.find(seat => seat.number === 5).surcharge, 75);
     assert.equal(seats.find(seat => seat.number === 23).surcharge, 100);
 
     const unpaidPassenger = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Betaler i Danmark', ticketNumber: 'TEST-001', phone: '11111111', pickupStopId: extraStop.id, destinationStopId: destination.id, paymentStatus: 'pay_dk', seatNumber: 23 } })).value;
