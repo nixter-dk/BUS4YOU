@@ -167,9 +167,9 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(seats.filter(seat => seat.deck === 'lower').length, 22);
     assert.equal(seats.filter(seat => seat.deck === 'upper').length, 62);
     assert.equal(seats.filter(seat => seat.type === 'table').length, 8);
-    assert.deepEqual(seats.filter(seat => seat.type === 'table').map(seat => seat.number), [5,6,7,8,9,10,11,12]);
+    assert.deepEqual(seats.filter(seat => seat.type === 'table').map(seat => seat.number), [1,2,3,4,5,6,7,8]);
     assert.equal(seats.filter(seat => seat.type === 'front').length, 4);
-    assert.equal(seats.find(seat => seat.number === 1).surcharge, 0);
+    assert.equal(seats.find(seat => seat.number === 1).surcharge, 75);
     assert.equal(seats.find(seat => seat.number === 5).surcharge, 75);
     assert.equal(seats.find(seat => seat.number === 23).surcharge, 100);
 
@@ -413,9 +413,10 @@ test('responsive check-in controls stay inside the visible workspace', () => {
   assert.match(app, /Sædeplan – Dobbeltdækkerbus/);
   assert.match(app, /pictureTripInfo\(\).*pictureLegend\(\)/s);
   assert.match(app, /pictureUpperDeck\(upper,pendingSeat\).*pictureLowerDeck\(lower,pendingSeat\)/s);
-  assert.match(app, /picture-front-magazine-seats.*frontRow\.slice\(2,4\).*picture-magazine">Magasin/s);
   assert.match(app, /picture-table-group picture-table-group-\$\{index\}/);
-  assert.match(styles, /\.table-bay-2,\.picture-table-group-2\{margin-top:48px\}/);
+  assert.match(app, /index===0\?\[\.\.\.seats\.slice\(0,2\),\.\.\.seats\.slice\(4,6\)\]/);
+  assert.match(app, /picture-after-tables.*picture-magazine">Magasin/s);
+  assert.match(styles, /\.lower-after-tables,\.picture-after-tables\{display:grid;grid-template-columns:1fr 1fr/);
   assert.match(styles, /\.seat-picker-dialog\{inset:8px;max-width:none/);
   assert.match(styles, /\.picture-left\{grid-template-rows:minmax\(0,1fr\) auto;align-content:stretch;overflow:hidden\}/);
   assert.match(styles, /\.picture-continue\{position:relative;z-index:2;width:100%/);
