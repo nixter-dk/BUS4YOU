@@ -413,6 +413,7 @@ test('responsive check-in controls stay inside the visible workspace', () => {
   assert.match(app, /Sædeplan – Dobbeltdækkerbus/);
   assert.match(app, /pictureTripInfo\(\).*pictureLegend\(\)/s);
   assert.match(app, /pictureUpperDeck\(upper,pendingSeat\).*pictureLowerDeck\(lower,pendingSeat\)/s);
+  assert.match(app, /picture-front-magazine-seats.*frontRow\.slice\(2,4\).*picture-magazine">Magasin/s);
   assert.match(styles, /\.seat-picker-dialog\{inset:8px;max-width:none/);
   assert.match(styles, /\.picture-left\{grid-template-rows:minmax\(0,1fr\) auto;align-content:stretch;overflow:hidden\}/);
   assert.match(styles, /\.picture-continue\{position:relative;z-index:2;width:100%/);
