@@ -415,8 +415,8 @@ test('responsive check-in controls stay inside the visible workspace', () => {
   assert.match(app, /pictureUpperDeck\(upper,pendingSeat\).*pictureLowerDeck\(lower,pendingSeat\)/s);
   assert.match(app, /picture-table-group picture-table-group-\$\{index\}/);
   assert.match(app, /index===0\?\[\.\.\.seats\.slice\(0,2\),\.\.\.seats\.slice\(4,6\)\]/);
-  assert.match(app, /picture-after-tables.*picture-magazine">Magasin/s);
-  assert.match(styles, /\.lower-after-tables,\.picture-after-tables\{display:grid;grid-template-columns:1fr 1fr/);
+  assert.match(app, /picture-lower-front.*picture-stairs tall.*picture-magazine">Magasin.*picture-tables/s);
+  assert.match(styles, /\.lower-front-layout \.luggage,\.picture-lower-front \.picture-magazine\{align-self:stretch/);
   assert.match(styles, /\.seat-picker-dialog\{inset:8px;max-width:none/);
   assert.match(styles, /\.picture-left\{grid-template-rows:minmax\(0,1fr\) auto;align-content:stretch;overflow:hidden\}/);
   assert.match(styles, /\.picture-continue\{position:relative;z-index:2;width:100%/);

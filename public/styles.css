@@ -165,4 +165,4 @@ html,body{max-width:100%;overflow-x:hidden}.content,#view,.panel,.form,.grid2,.t
 }
 .deletion-zone{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px;padding:14px;border:1px solid #f0c5c5;border-radius:12px;background:#fff7f7}.deletion-zone>div{display:grid;gap:3px}.deletion-zone strong{font-size:11px;color:#9e3434}.deletion-zone span{font-size:9px;color:#805c5c}.deletion-zone button{flex:0 0 auto}@media(max-width:520px){.deletion-zone{align-items:stretch;flex-direction:column}.deletion-zone button{min-height:44px;width:100%}}
 .lower-magazine-stack,.picture-magazine-stack{display:grid;align-content:end;gap:7px}.front-magazine-seats,.picture-front-magazine-seats{display:flex;justify-content:center;gap:6px}
-.lower-after-tables,.picture-after-tables{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:0 0 12px}
+.lower-front-layout .luggage,.picture-lower-front .picture-magazine{align-self:stretch;min-height:38px}
