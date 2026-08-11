@@ -41,12 +41,12 @@ function seed() {
     { id: 3, name: 'Sara Chauffør', email: 'sara@albaturist.dk', role: 'driver', salt: driver2.salt, passwordHash: driver2.hash }
   );
   return {
-    meta: { version: 14, nextId: 20 },
+    meta: { version: 15, nextId: 20 },
     settings: { logoFile: null, logoType: null, logoName: null },
     users,
     stops: [], buses: [],
     trips: [],
-    passengers: [], baggage: [], expenses: [], cashSettlements: [], cashTransfers: [], sessions: []
+    passengers: [], baggage: [], expenses: [], cashSettlements: [], cashTransfers: [], auditLog: [], sessions: []
   };
 }
 function writeLocalDb(value) {
@@ -59,24 +59,36 @@ function loadLocalDb() {
   try { return JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); }
   catch (_) { const value = seed(); writeLocalDb(value); return value; }
 }
+function readLocalDbIfPresent() {
+  try { return JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); }
+  catch (_) { return null; }
+}
 let db = null;
 let pool = null;
 let storageWriteQueue = Promise.resolve();
 async function saveDb(value = db) {
   const snapshot = JSON.stringify(value);
   if (!pool) { writeLocalDb(value); return; }
-  storageWriteQueue = storageWriteQueue.catch(() => {}).then(() => pool.query(
-    `INSERT INTO busops_state (id, data, updated_at) VALUES (1, $1::jsonb, NOW())
-     ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
-    [snapshot]
-  ));
+  storageWriteQueue = storageWriteQueue.catch(() => {}).then(async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO busops_state (id, data, revision, updated_at) VALUES (1, $1::jsonb, 1, NOW())
+         ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, revision = busops_state.revision + 1, updated_at = NOW()`,
+        [snapshot]
+      );
+      await client.query('COMMIT');
+    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    finally { client.release(); }
+  });
   await storageWriteQueue;
 }
 function migrateDb(value) {
   let migrated = false;
   value.meta = value.meta || { version: 1, nextId: 20 };
   if (!value.settings || typeof value.settings !== 'object') { value.settings = { logoFile:null,logoType:null,logoName:null }; migrated = true; }
-  for (const name of ['users','stops','buses','trips','passengers','baggage','expenses','cashSettlements','cashTransfers']) if (!Array.isArray(value[name])) { value[name] = []; migrated = true; }
+  for (const name of ['users','stops','buses','trips','passengers','baggage','expenses','cashSettlements','cashTransfers','auditLog']) if (!Array.isArray(value[name])) { value[name] = []; migrated = true; }
   if ((value.meta.version || 1) < 3) {
     value.stops = []; value.trips = []; value.passengers = []; value.baggage = [];
     value.meta.version = 3; migrated = true;
@@ -104,6 +116,7 @@ function migrateDb(value) {
     value.meta.version = 13; migrated = true;
   }
   if ((value.meta.version || 1) < 14) { for (const passenger of value.passengers) if (passenger.ticketNumber === undefined) passenger.ticketNumber = ''; value.meta.version = 14; migrated = true; }
+  if ((value.meta.version || 1) < 15) { value.auditLog = value.auditLog || []; value.meta.version = 15; migrated = true; }
   for(const user of value.users){if(!['da','sq','de','en'].includes(user.language)){user.language='da';migrated=true}}
   for (const trip of value.trips) {
     if (!trip.seatCount) { trip.seatCount = 54; migrated = true; }
@@ -120,10 +133,14 @@ async function initializeStorage() {
     else if (process.env.DATABASE_SSL === 'require') config.ssl = true;
     pool = new Pool(config);
     pool.on('error', error => console.error('PostgreSQL-forbindelse fejlede', error));
-    await pool.query('CREATE TABLE IF NOT EXISTS busops_state (id SMALLINT PRIMARY KEY CHECK (id = 1), data JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())');
+    await pool.query('CREATE TABLE IF NOT EXISTS busops_state (id SMALLINT PRIMARY KEY CHECK (id = 1), data JSONB NOT NULL, revision BIGINT NOT NULL DEFAULT 1, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())');
+    await pool.query('ALTER TABLE busops_state ADD COLUMN IF NOT EXISTS revision BIGINT NOT NULL DEFAULT 1');
+    await pool.query('CREATE TABLE IF NOT EXISTS busops_import_log (id BIGSERIAL PRIMARY KEY, imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), source TEXT NOT NULL, summary JSONB NOT NULL)');
     const result = await pool.query('SELECT data FROM busops_state WHERE id = 1');
-    db = result.rows[0]?.data || seed();
+    const localData = !result.rows[0] ? readLocalDbIfPresent() : null;
+    db = result.rows[0]?.data || localData || seed();
     created = !result.rows[0];
+    if (created && localData) await pool.query('INSERT INTO busops_import_log (source, summary) VALUES ($1, $2::jsonb)', [DB_FILE, JSON.stringify({ trips:localData.trips?.length||0,passengers:localData.passengers?.length||0,baggage:localData.baggage?.length||0,expenses:localData.expenses?.length||0 })]);
   } else db = loadLocalDb();
   const migrated = migrateDb(db);
   if (created || migrated) await saveDb();
@@ -202,6 +219,7 @@ function json(res, status, value, headers = {}) {
   res.end(JSON.stringify(value));
 }
 function fail(res, status, message) { json(res, status, { error: message }); }
+function failDetails(res, status, message, details) { json(res, status, { error:message, ...details }); }
 async function body(req) {
   let raw = '', receivedBytes = 0;
   for await (const chunk of req) {
@@ -222,10 +240,34 @@ function tripView(t) {
     primaryDriver: db.users.find(u => u.id === t.primaryDriverId)?.name || null,
     secondaryDriver: db.users.find(u => u.id === t.secondaryDriverId)?.name || null,
     salesManager: db.users.find(u => u.id === t.salesManagerId)?.name || null,
-    cancelledByName: userName(t.cancelledBy),
+    cancelledByName: userName(t.cancelledBy), closedByName:userName(t.closedBy), reopenedByName:userName(t.reopenedBy),
     counts: { passengers: passengers.length, checkedIn: passengers.filter(p => p.checkedIn).length, baggage: baggage.length, onboard: baggage.filter(b => b.status === 'onboard').length, unpaid: [...passengers,...baggage].filter(isPendingPayment).length, pendingExpenses:expenses.filter(expense=>(expense.status||'pending')==='pending').length, missingReceipts:expenses.filter(expense=>!expense.receiptFile).length, unsettledCash:unsettledCash.length }
   };
 }
+function audit(user, action, entityType, entityId, tripId = null, details = {}) {
+  const event = { id:id(),at:new Date().toISOString(),userId:user?.id||null,userName:user?.name||'System',role:user?.role||'system',action,entityType,entityId:Number(entityId)||entityId||null,tripId:Number(tripId)||null,details };
+  db.auditLog.push(event); return event;
+}
+function cashBoxes(tripId) {
+  const records=[...db.passengers.map(record=>({kind:'passenger',record})),...db.baggage.map(record=>({kind:'baggage',record}))]
+    .filter(item=>item.record.tripId===tripId&&item.record.paymentStatus==='cash'&&['bus','departure'].includes(item.record.paymentLocation)&&item.record.cashHolderUserId&&!item.record.cashHandedOverAt);
+  return [...new Set(records.map(item=>item.record.cashHolderUserId))].map(holderId=>{
+    const held=records.filter(item=>item.record.cashHolderUserId===holderId),tickets=held.filter(item=>item.kind==='passenger'),baggage=held.filter(item=>item.kind==='baggage');
+    return {holderId,holderName:userName(holderId),totals:cashAmounts(held),ticketTotals:cashAmounts(tickets),baggageTotals:cashAmounts(baggage),payments:held.length,paymentRefs:held.map(item=>`${item.kind}:${item.record.id}`)};
+  });
+}
+function tripCloseBlockers(trip) {
+  const passengers=db.passengers.filter(item=>item.tripId===trip.id),baggage=db.baggage.filter(item=>item.tripId===trip.id),expenses=db.expenses.filter(item=>item.tripId===trip.id);
+  return {
+    passengers:passengers.filter(item=>!item.checkedIn&&item.attendanceStatus!=='no_show').map(item=>({id:item.id,name:item.name})),
+    baggage:baggage.filter(item=>!['delivered','unclaimed'].includes(item.status)).map(item=>({id:item.id,name:item.senderName,status:item.status})),
+    expenses:expenses.filter(item=>!item.receiptFile||(item.status||'pending')==='pending'||((item.paymentMethod||'cash')==='private'&&item.status==='approved'&&item.reimbursementStatus!=='paid')).map(item=>({id:item.id,category:item.category,status:item.status,missingReceipt:!item.receiptFile})),
+    transfers:db.cashTransfers.filter(item=>item.tripId===trip.id&&item.status==='pending').map(item=>item.id),
+    settlements:db.cashSettlements.filter(item=>item.tripId===trip.id&&item.status==='pending').map(item=>item.id),
+    cash:cashBoxes(trip.id)
+  };
+}
+function hasCloseBlockers(blockers) { return Object.values(blockers).some(value=>Array.isArray(value)&&value.length); }
 function seatMap(tripId) {
   const trip = db.trips.find(t => t.id === tripId);
   const taken = new Map(db.passengers.filter(p => p.tripId === tripId).map(p => [p.seatNumber, p.id]));
@@ -289,6 +331,11 @@ async function api(req, res, pathname) {
     return json(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie('', 0) });
   }
   const user = auth(req); if (!user) return fail(res, 401, 'Log ind for at fortsætte');
+  if(pathname==='/api/audit'&&req.method==='GET'){
+    if(user.role!=='admin')return fail(res,403,'Kun administratoren kan se revisionshistorikken');
+    const url=new URL(req.url,`http://${req.headers.host||'localhost'}`),tripId=Number(url.searchParams.get('tripId')||0),limit=Math.min(500,Math.max(1,Number(url.searchParams.get('limit')||200)));
+    const events=db.auditLog.filter(event=>!tripId||event.tripId===tripId).slice(-limit).reverse();return json(res,200,{events});
+  }
   if(pathname==='/api/profile/language'&&req.method==='PATCH'){
     const data=await body(req),language=String(data.language||'');if(!['da','sq','de','en'].includes(language))return fail(res,400,'Vælg et gyldigt sprog');user.language=language;await saveDb();return json(res,200,{language});
   }
@@ -475,11 +522,12 @@ async function api(req, res, pathname) {
     const timetable = [{ stopId: Number(data.originId), arrivalAt: departureAt.toISOString(), departureAt: departureAt.toISOString() }];
     if (Number(data.destinationId) !== Number(data.originId)) timetable.push({ stopId: Number(data.destinationId), arrivalAt: destinationAt.toISOString(), departureAt: destinationAt.toISOString() });
     const trip = { id: id(), title: data.title.trim(), departureAt: departureAt.toISOString(), durationMinutes, originId: Number(data.originId), destinationId: Number(data.destinationId), timetable, basePrice: Number(data.basePrice || 0), busId: bus.id, seatCount: bus.seatCount, primaryDriverId: Number(data.primaryDriverId), secondaryDriverId: data.secondaryDriverId ? Number(data.secondaryDriverId) : null, salesManagerId, status: 'planned' };
-    db.trips.push(trip); await saveDb(); return json(res, 201, tripView(trip));
+    db.trips.push(trip); audit(user,'trip.created','trip',trip.id,trip.id,{title:trip.title}); await saveDb(); return json(res, 201, tripView(trip));
   }
   const expenseMatch = pathname.match(/^\/api\/expenses\/(\d+)$/);
   if (expenseMatch && req.method === 'PATCH') {
     const expense=db.expenses.find(e=>e.id===Number(expenseMatch[1]));if(!expense)return fail(res,404,'Udgiften findes ikke');
+    const lockedExpenseTrip=db.trips.find(candidate=>candidate.id===expense.tripId);if(lockedExpenseTrip?.status==='completed')return fail(res,409,'Turens økonomi er afsluttet. Genåbn turen før ændringer');
     const data=await body(req);
     if (data.edit === true) {
       const expenseTrip=db.trips.find(candidate=>candidate.id===expense.tripId);
@@ -511,7 +559,7 @@ async function api(req, res, pathname) {
     if(!['approved','rejected'].includes(data.status))return fail(res,400,'Vælg godkendt eller afvist');
     if(expense.status!=='pending')return fail(res,409,'Udgiften er allerede behandlet');
     if(data.status==='approved'&&!expense.receiptFile)return fail(res,409,'Tilføj en kvittering før udgiften godkendes');
-    expense.status=data.status;expense.reviewedAt=new Date().toISOString();expense.reviewedBy=user.id;expense.reviewNote=String(data.reviewNote||'').trim();await saveDb();return json(res,200,{...expense,createdByName:userName(expense.createdBy),paidByName:userName(expense.paidByUserId||expense.createdBy),reviewedByName:user.name});
+    expense.status=data.status;expense.reviewedAt=new Date().toISOString();expense.reviewedBy=user.id;expense.reviewNote=String(data.reviewNote||'').trim();audit(user,`expense.${data.status}`,'expense',expense.id,expense.tripId,{amount:expense.amount,currency:expense.currency});await saveDb();return json(res,200,{...expense,createdByName:userName(expense.createdBy),paidByName:userName(expense.paidByUserId||expense.createdBy),reviewedByName:user.name});
   }
   const receiptMatch = pathname.match(/^\/api\/expenses\/(\d+)\/receipt$/);
   if (receiptMatch && req.method === 'GET') {
@@ -544,17 +592,28 @@ async function api(req, res, pathname) {
       transfers: db.cashTransfers.some(record => record.tripId === trip.id)
     };
     if (Object.values(linked).some(Boolean)) return fail(res,409,'Turen har registrerede passagerer, bagage, udgifter eller kontantafstemninger og skal derfor annulleres i stedet');
-    db.trips = db.trips.filter(record => record.id !== trip.id); await saveDb(); return json(res,200,{ok:true});
+    audit(user,'trip.deleted','trip',trip.id,trip.id,{title:trip.title});db.trips = db.trips.filter(record => record.id !== trip.id); await saveDb(); return json(res,200,{ok:true});
   }
   if (!part && req.method === 'PATCH') {
     const data = await body(req);
     if (Object.prototype.hasOwnProperty.call(data,'status')) {
-      if (user.role !== 'admin') return fail(res,403,'Kun administratoren kan annullere en tur');
-      if (data.status !== 'cancelled') return fail(res,400,'Turen kan kun ændres til annulleret');
+      if (user.role !== 'admin') return fail(res,403,'Kun administratoren kan ændre turens status');
+      if(data.status==='completed'){
+        if(trip.status!=='planned')return fail(res,409,'Kun en aktiv tur kan afsluttes');
+        const blockers=tripCloseBlockers(trip);if(hasCloseBlockers(blockers))return failDetails(res,409,'Turen kan ikke afsluttes endnu',{blockers});
+        const note=String(data.closeNote||'').trim(),at=new Date().toISOString();trip.status='completed';trip.closedAt=at;trip.closedBy=user.id;trip.closeNote=note;trip.economyLockedAt=at;trip.lifecycleHistory=trip.lifecycleHistory||[];trip.lifecycleHistory.push({action:'closed',at,userId:user.id,note});audit(user,'trip.closed','trip',trip.id,trip.id,{note});await saveDb();return json(res,200,tripView(trip));
+      }
+      if(data.status==='planned'&&trip.status==='completed'){
+        const reason=String(data.reopenReason||'').trim();if(reason.length<3)return fail(res,400,'Skriv en begrundelse for genåbningen');
+        const at=new Date().toISOString();trip.status='planned';trip.reopenedAt=at;trip.reopenedBy=user.id;trip.reopenReason=reason;trip.economyLockedAt=null;trip.lifecycleHistory=trip.lifecycleHistory||[];trip.lifecycleHistory.push({action:'reopened',at,userId:user.id,reason});audit(user,'trip.reopened','trip',trip.id,trip.id,{reason});await saveDb();return json(res,200,tripView(trip));
+      }
+      if(data.status!=='cancelled')return fail(res,400,'Ugyldig turstatus');
+      if(trip.status==='completed')return fail(res,409,'Genåbn turen før den annulleres');
       if (trip.status === 'cancelled') return fail(res,409,'Turen er allerede annulleret');
       const reason = String(data.cancellationReason || '').trim(); if (reason.length < 3) return fail(res,400,'Skriv en begrundelse for annulleringen');
-      trip.status='cancelled';trip.cancellationReason=reason;trip.cancelledAt=new Date().toISOString();trip.cancelledBy=user.id;await saveDb();return json(res,200,tripView(trip));
+      trip.status='cancelled';trip.cancellationReason=reason;trip.cancelledAt=new Date().toISOString();trip.cancelledBy=user.id;audit(user,'trip.cancelled','trip',trip.id,trip.id,{reason});await saveDb();return json(res,200,tripView(trip));
     }
+    if (trip.status === 'completed') return fail(res,409,'Turen er afsluttet og låst. Genåbn turen før ændringer');
     if (trip.status === 'cancelled') return fail(res,409,'Turen er annulleret og kan ikke ændres');
     if (Object.prototype.hasOwnProperty.call(data,'timetable')) {
       if (user.role !== 'admin') return fail(res,403,'Kun administratoren kan ændre turens tidtabel');
@@ -615,8 +674,9 @@ async function api(req, res, pathname) {
     const settlements=db.cashSettlements.filter(settlement=>settlement.tripId===trip.id&&(user.role!=='sales_manager'||settlement.driverId===user.id)).map(settlement=>({...settlement,driverName:db.users.find(candidate=>candidate.id===settlement.driverId)?.name||'Ukendt',submittedByName:db.users.find(candidate=>candidate.id===settlement.submittedBy)?.name||'Ukendt',reviewedByName:settlement.reviewedBy?db.users.find(candidate=>candidate.id===settlement.reviewedBy)?.name||'Ukendt':null}));
     const expenses=user.role==='sales_manager'?[]:db.expenses.filter(expense=>expense.tripId===trip.id).map(expenseRecordView);
     const transfers=db.cashTransfers.filter(transfer=>transfer.tripId===trip.id&&(user.role==='admin'||[transfer.fromDriverId,transfer.toDriverId].includes(user.id))).map(cashTransferView);
-    return json(res,200,{trip:tripView(trip),passengers:db.passengers.filter(passenger=>passenger.tripId===trip.id).map(passengerRecordView),baggage:db.baggage.filter(item=>item.tripId===trip.id&&startOnly(item)).map(baggageRecordView),expenses,settlements,transfers,seats:seatMap(trip.id)});
+    return json(res,200,{trip:tripView(trip),passengers:db.passengers.filter(passenger=>passenger.tripId===trip.id).map(passengerRecordView),baggage:db.baggage.filter(item=>item.tripId===trip.id&&startOnly(item)).map(baggageRecordView),expenses,settlements,transfers,cashBoxes:cashBoxes(trip.id),seats:seatMap(trip.id)});
   }
+  if (trip.status === 'completed' && req.method !== 'GET') return fail(res,409,'Turen er afsluttet og økonomien er låst. Genåbn turen før ændringer');
   if (part === 'seats' && req.method === 'GET') return json(res, 200, seatMap(trip.id));
   if (trip.status === 'cancelled' && ['passengers','baggage'].includes(part)) return fail(res,409,'Turen er annulleret og kan ikke længere bruges til salg eller check-in');
   if (part === 'passengers' && req.method === 'POST') {
@@ -633,14 +693,14 @@ async function api(req, res, pathname) {
     if(user.role==='sales_manager'&&data.paymentStatus==='free')return fail(res,403,'Kun administratoren kan udstede gratis billetter');
     const paymentLocation=data.paymentStatus==='cash'?(user.role==='sales_manager'?'departure':user.role==='driver'?'bus':'shop'):null,cashHolderUserId=data.paymentStatus==='cash'&&['sales_manager','driver'].includes(user.role)?user.id:null;
     const passenger = { id: id(), tripId: trip.id, name: data.name.trim(), ticketNumber, phone: data.phone.trim(), pickupStopId: Number(data.pickupStopId), destinationStopId: Number(data.destinationStopId), paymentStatus: data.paymentStatus, paymentCurrency, cashAmount: data.paymentStatus === 'cash' ? Number(data.cashAmount || 0) : 0, paymentLocation, paymentRecordedAt: ['cash','free'].includes(data.paymentStatus) ? new Date().toISOString() : null, paymentRecordedBy: ['cash','free'].includes(data.paymentStatus) ? user.id : null, cashHolderUserId, createdBy:user.id, freeTicketReason: data.paymentStatus === 'free' ? String(data.freeTicketReason || '').trim() : '', seatNumber: seat.number, seatType: seat.type, seatSurcharge: seat.surcharge, totalPrice: data.paymentStatus === 'free' ? 0 : trip.basePrice + seat.surcharge, checkedIn: false, attendanceStatus: 'pending', checkedInAt: null, checkedInBy: null };
-    db.passengers.push(passenger); await saveDb(); return json(res, 201, passengerRecordView(passenger));
+    db.passengers.push(passenger);audit(user,'passenger.created','passenger',passenger.id,trip.id,{name:passenger.name,seatNumber:passenger.seatNumber,paymentStatus:passenger.paymentStatus}); await saveDb(); return json(res, 201, passengerRecordView(passenger));
   }
   if (part === 'passengers' && req.method === 'DELETE') {
     if (!['admin','sales_manager','driver'].includes(user.role)) return fail(res,403,'Du har ikke adgang til at slette passagerer');
     const data=await body(req),passenger=db.passengers.find(candidate=>candidate.id===Number(data.id)&&candidate.tripId===trip.id);if(!passenger)return fail(res,404,'Passageren findes ikke');
     const reason=String(data.deletionReason||'').trim();if(reason.length<3)return fail(res,400,'Skriv kort, hvorfor passageren slettes');
     const reference=`passenger:${passenger.id}`;if(passenger.cashHandedOverAt||hasCashAuditReference(reference))return fail(res,409,'Passagerens betaling indgår i en kontantoverførsel eller afstemning og kan derfor ikke slettes');
-    recordDeletion(trip,'passenger',passenger,user,reason);db.passengers=db.passengers.filter(candidate=>candidate.id!==passenger.id);await saveDb();return json(res,200,{ok:true,freedSeatNumber:passenger.seatNumber});
+    recordDeletion(trip,'passenger',passenger,user,reason);audit(user,'passenger.deleted','passenger',passenger.id,trip.id,{name:passenger.name,reason});db.passengers=db.passengers.filter(candidate=>candidate.id!==passenger.id);await saveDb();return json(res,200,{ok:true,freedSeatNumber:passenger.seatNumber});
   }
   if (part === 'passengers' && req.method === 'PATCH') {
     const data = await body(req); const passenger = db.passengers.find(p => p.id === Number(data.id) && p.tripId === trip.id); if (!passenger) return fail(res, 404, 'Passageren findes ikke');
@@ -658,7 +718,7 @@ async function api(req, res, pathname) {
       }
       const changes=changedFields(passenger,updates);if(!Object.keys(changes).length)return fail(res,400,'Der er ingen ændringer at gemme');
       Object.assign(passenger,updates);passenger.editHistory=passenger.editHistory||[];passenger.editHistory.push({editedAt:new Date().toISOString(),editedBy:user.id,reason,changes});
-      await saveDb();return json(res,200,passengerRecordView(passenger));
+      audit(user,'passenger.corrected','passenger',passenger.id,trip.id,{reason,changes});await saveDb();return json(res,200,passengerRecordView(passenger));
     }
     if(user.role==='sales_manager'&&passenger.pickupStopId!==trip.originId&&data.paymentStatus==='cash')return fail(res,403,'Salgschefen kan kun modtage billetbetaling ved turens startsted');
     if (data.paymentStatus === 'cash') {
@@ -681,7 +741,7 @@ async function api(req, res, pathname) {
       passenger.attendanceHistory = passenger.attendanceHistory || []; const attendanceEvent={ action:passenger.checkedIn?'checked_in':'check_in_undone',at:new Date().toISOString(),userId:user.id,stopId:passenger.pickupStopId }; if(passenger.checkedIn)Object.assign(attendanceEvent,{receivedAmount:passenger.paymentStatus==='cash'?Number(passenger.cashAmount||0):0,receivedCurrency:passenger.paymentCurrency||'DKK',receivedBy:passenger.paymentStatus==='cash'?(passenger.cashHolderUserId||passenger.paymentRecordedBy):null}); passenger.attendanceHistory.push(attendanceEvent);
     }
     if (data.attendanceStatus === 'no_show') { passenger.checkedIn = false; passenger.attendanceStatus = 'no_show'; passenger.checkedInAt = null; passenger.checkedInBy = null; passenger.attendanceHistory = passenger.attendanceHistory || []; passenger.attendanceHistory.push({action:'no_show',at:new Date().toISOString(),userId:user.id,stopId:passenger.pickupStopId}); }
-    await saveDb(); return json(res, 200, passengerRecordView(passenger));
+    audit(user,data.paymentStatus==='cash'?'passenger.payment_recorded':typeof data.checkedIn==='boolean'?(data.checkedIn?'passenger.checked_in':'passenger.unchecked'):data.attendanceStatus==='no_show'?'passenger.no_show':'passenger.updated','passenger',passenger.id,trip.id);await saveDb(); return json(res, 200, passengerRecordView(passenger));
   }
   if (part === 'baggage' && req.method === 'POST') {
     if (!['admin','sales_manager','driver'].includes(user.role)) return fail(res, 403, 'Du har ikke adgang til at registrere bagage');
@@ -697,7 +757,7 @@ async function api(req, res, pathname) {
     const paymentCurrency = ['DKK','EUR'].includes(data.paymentCurrency) ? data.paymentCurrency : 'DKK';
     const createdAt=new Date().toISOString();
     const item = { id: id(), tripId: trip.id, senderName: data.senderName.trim(), recipientName: data.recipientName.trim(), phone: data.phone.trim(), pickupStopId: Number(data.pickupStopId), destinationStopId: Number(data.destinationStopId), pieces: Number(data.pieces), description: String(data.description || '').trim(), photoName, photoType, photoFile, paymentStatus: data.paymentStatus, paymentCurrency, cashAmount: data.paymentStatus === 'cash' ? Number(data.cashAmount || 0) : 0, paymentLocation: data.paymentStatus === 'cash' ? (user.role==='sales_manager'?'departure':user.role==='driver'?'bus':'shop') : null, paymentRecordedAt: data.paymentStatus === 'cash' ? createdAt : null, paymentRecordedBy: data.paymentStatus === 'cash' ? user.id : null, cashHolderUserId: data.paymentStatus === 'cash'&&['sales_manager','driver'].includes(user.role)?user.id:null, notes: String(data.notes || '').trim(), status: 'registered', createdAt, createdBy:user.id, statusUpdatedAt:createdAt, statusUpdatedBy:user.id, baggageHistory:[{action:'registered',at:createdAt,userId:user.id}] };
-    db.baggage.push(item); await saveDb(); return json(res, 201, baggageRecordView(item));
+    db.baggage.push(item);audit(user,'baggage.created','baggage',item.id,trip.id,{senderName:item.senderName,recipientName:item.recipientName,paymentStatus:item.paymentStatus}); await saveDb(); return json(res, 201, baggageRecordView(item));
   }
   if (part === 'baggage' && req.method === 'DELETE') {
     if (!['admin','sales_manager','driver'].includes(user.role)) return fail(res,403,'Du har ikke adgang til at slette bagage');
@@ -705,7 +765,7 @@ async function api(req, res, pathname) {
     if(user.role==='sales_manager'&&item.pickupStopId!==trip.originId)return fail(res,403,'Salgschefen kan kun slette bagage ved turens startsted');
     const reason=String(data.deletionReason||'').trim();if(reason.length<3)return fail(res,400,'Skriv kort, hvorfor bagagen slettes');
     const reference=`baggage:${item.id}`;if(item.cashHandedOverAt||hasCashAuditReference(reference))return fail(res,409,'Bagagens betaling indgår i en kontantoverførsel eller afstemning og kan derfor ikke slettes');
-    recordDeletion(trip,'baggage',item,user,reason);db.baggage=db.baggage.filter(candidate=>candidate.id!==item.id);await saveDb();
+    recordDeletion(trip,'baggage',item,user,reason);audit(user,'baggage.deleted','baggage',item.id,trip.id,{senderName:item.senderName,reason});db.baggage=db.baggage.filter(candidate=>candidate.id!==item.id);await saveDb();
     if(item.photoFile){const photoPath=path.join(UPLOAD_DIR,path.basename(item.photoFile));try{if(fs.existsSync(photoPath))fs.unlinkSync(photoPath)}catch(error){console.error('Kunne ikke fjerne slettet bagagefoto:',error.message)}}
     return json(res,200,{ok:true});
   }
@@ -722,7 +782,7 @@ async function api(req, res, pathname) {
       }
       const changes=changedFields(item,updates);if(!Object.keys(changes).length)return fail(res,400,'Der er ingen ændringer at gemme');
       Object.assign(item,updates);item.editHistory=item.editHistory||[];item.editHistory.push({editedAt:new Date().toISOString(),editedBy:user.id,reason,changes});
-      await saveDb();return json(res,200,baggageRecordView(item));
+      audit(user,'baggage.corrected','baggage',item.id,trip.id,{reason,changes});await saveDb();return json(res,200,baggageRecordView(item));
     }
     if(user.role==='sales_manager'&&item.pickupStopId!==trip.originId)return fail(res,403,'Salgschefen kan kun betjene bagage ved turens startsted');
     if (data.paymentStatus === 'cash') {
@@ -741,7 +801,7 @@ async function api(req, res, pathname) {
       if (!['registered','received','onboard','delivered','unclaimed'].includes(data.status)) return fail(res, 400, 'Ugyldig status');
       item.status = data.status; item.statusUpdatedAt=new Date().toISOString(); item.statusUpdatedBy=user.id; item.baggageHistory=item.baggageHistory||[]; item.baggageHistory.push({action:data.status,at:item.statusUpdatedAt,userId:user.id});
     }
-    await saveDb(); return json(res, 200, baggageRecordView(item));
+    audit(user,data.paymentStatus==='cash'?'baggage.payment_recorded':data.status?`baggage.${data.status}`:'baggage.updated','baggage',item.id,trip.id);await saveDb(); return json(res, 200, baggageRecordView(item));
   }
   if (part === 'expenses' && req.method === 'POST') {
     if(user.role==='sales_manager')return fail(res,403,'Salgschefen kan ikke registrere turudgifter');
@@ -752,7 +812,7 @@ async function api(req, res, pathname) {
     let receiptType=null,receiptName=null,receiptFile=null;
     if(data.receiptData){receiptType=String(data.receiptType||'');receiptName=path.basename(String(data.receiptName||'kvittering'));if(!['image/jpeg','image/png','image/webp','application/pdf'].includes(receiptType))return fail(res,400,'Kvitteringen skal være PDF, JPG, PNG eller WebP');const encoded=String(data.receiptData).replace(/^data:[^;]+;base64,/,'');const fileData=Buffer.from(encoded,'base64');if(!fileData.length||fileData.length>5*1024*1024)return fail(res,400,'Kvitteringen skal være mellem 1 byte og 5 MB');const extensions={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','application/pdf':'.pdf'};receiptFile=`${crypto.randomBytes(18).toString('hex')}${extensions[receiptType]}`;const uploadDir=UPLOAD_DIR;fs.mkdirSync(uploadDir,{recursive:true});fs.writeFileSync(path.join(uploadDir,receiptFile),fileData);}
     const expense = { id:id(),tripId:trip.id,expenseDate:trip.departureAt,category,description:String(data.description||'').trim(),amount,currency,paymentMethod,paidByUserId,receiptName,receiptType,receiptFile,createdAt:new Date().toISOString(),createdBy:user.id,status:'pending',reviewedAt:null,reviewedBy:null,reviewNote:'',reimbursementStatus:paymentMethod==='private'?'pending':'not_applicable',reimbursedAt:null,reimbursedBy:null };
-    db.expenses.push(expense); await saveDb(); return json(res,201,{...expense,createdByName:user.name,paidByName:userName(paidByUserId)});
+    db.expenses.push(expense);audit(user,'expense.created','expense',expense.id,trip.id,{amount,currency,category,paymentMethod}); await saveDb(); return json(res,201,{...expense,createdByName:user.name,paidByName:userName(paidByUserId)});
   }
   if (part === 'transfers' && req.method === 'POST') {
     if(!['driver','admin'].includes(user.role))return fail(res,403,'Kun tildelte chauffører kan overføre kontanter');
@@ -763,7 +823,7 @@ async function api(req, res, pathname) {
     if(items.some(item=>item.record.paymentStatus!=='cash'||item.record.paymentLocation!=='bus'||item.record.cashHolderUserId!==fromDriverId||item.record.cashHandedOverAt))return fail(res,409,'En valgt betaling står ikke længere hos den afsendende chauffør');
     if(items.some(item=>hasPendingSettlementReference(item.reference)||hasPendingTransferReference(item.reference)))return fail(res,409,'En valgt betaling indgår allerede i en igangværende afstemning eller overførsel');
     const totals=cashAmounts(items),transfer={id:id(),tripId:trip.id,fromDriverId,toDriverId,paymentRefs:items.map(item=>item.reference),totals,note:String(data.note||'').trim(),status:'pending',initiatedAt:new Date().toISOString(),initiatedBy:user.id,respondedAt:null,respondedBy:null,responseNote:''};
-    db.cashTransfers.push(transfer);await saveDb();return json(res,201,cashTransferView(transfer));
+    transfer.receiptNumber=`KT-${String(trip.id).padStart(4,'0')}-${String(transfer.id).padStart(6,'0')}`;db.cashTransfers.push(transfer);audit(user,'cash_transfer.initiated','cash_transfer',transfer.id,trip.id,{receiptNumber:transfer.receiptNumber,fromDriverId,toDriverId,totals});await saveDb();return json(res,201,cashTransferView(transfer));
   }
   if (part === 'transfers' && req.method === 'PATCH') {
     const data=await body(req),transfer=db.cashTransfers.find(candidate=>candidate.id===Number(data.id)&&candidate.tripId===trip.id);if(!transfer)return fail(res,404,'Kontantoverførslen findes ikke');
@@ -774,7 +834,7 @@ async function api(req, res, pathname) {
       const items=transfer.paymentRefs.map(reference=>cashRecordByReference(reference,trip.id));if(items.some(item=>!item||item.record.cashHolderUserId!==transfer.fromDriverId||item.record.cashHandedOverAt||hasPendingSettlementReference(item.reference)))return fail(res,409,'En betaling har ændret status. Overførslen kan ikke gennemføres');
       const acceptedAt=new Date().toISOString();for(const item of items){item.record.cashHolderUserId=transfer.toDriverId;item.record.cashTransferHistory=item.record.cashTransferHistory||[];item.record.cashTransferHistory.push({transferId:transfer.id,fromDriverId:transfer.fromDriverId,toDriverId:transfer.toDriverId,at:acceptedAt,acceptedBy:user.id});}
     }
-    transfer.status=data.status;transfer.respondedAt=new Date().toISOString();transfer.respondedBy=user.id;transfer.responseNote=String(data.responseNote||'').trim();await saveDb();return json(res,200,cashTransferView(transfer));
+    transfer.status=data.status;transfer.respondedAt=new Date().toISOString();transfer.respondedBy=user.id;transfer.responseNote=String(data.responseNote||'').trim();audit(user,`cash_transfer.${data.status}`,'cash_transfer',transfer.id,trip.id,{receiptNumber:transfer.receiptNumber,totals:transfer.totals});await saveDb();return json(res,200,cashTransferView(transfer));
   }
   if (part === 'settlements' && req.method === 'POST') {
     const data = await body(req); const driverId = ['driver','sales_manager'].includes(user.role) ? user.id : Number(data.driverId);
@@ -786,7 +846,7 @@ async function api(req, res, pathname) {
     const expected = cashAmounts(items); const delivered = { DKK:Number(data.deliveredDKK||0),EUR:Number(data.deliveredEUR||0) };
     if (delivered.DKK < 0 || delivered.EUR < 0) return fail(res,400,'Det afleverede beløb kan ikke være negativt');
     const settlement = { id:id(),tripId:trip.id,driverId,expected,delivered,difference:{DKK:delivered.DKK-expected.DKK,EUR:delivered.EUR-expected.EUR},note:String(data.note||'').trim(),paymentRefs:items.map(item=>`${item.kind}:${item.record.id}`),status:'pending',submittedAt:new Date().toISOString(),submittedBy:user.id,reviewedAt:null,reviewedBy:null,reviewNote:'' };
-    db.cashSettlements.push(settlement); await saveDb(); return json(res,201,{...settlement,driverName:db.users.find(u=>u.id===driverId)?.name||'Ukendt',submittedByName:user.name});
+    db.cashSettlements.push(settlement);audit(user,'cash_settlement.submitted','cash_settlement',settlement.id,trip.id,{driverId,expected,delivered}); await saveDb(); return json(res,201,{...settlement,driverName:db.users.find(u=>u.id===driverId)?.name||'Ukendt',submittedByName:user.name});
   }
   if (part === 'settlements' && req.method === 'PATCH') {
     if (user.role !== 'admin') return fail(res,403,'Kun administratoren kan godkende kontantafstemninger');
@@ -795,7 +855,7 @@ async function api(req, res, pathname) {
     if (!['approved','rejected'].includes(data.status)) return fail(res,400,'Vælg godkendt eller afvist');
     settlement.status=data.status;settlement.reviewedAt=new Date().toISOString();settlement.reviewedBy=user.id;settlement.reviewNote=String(data.reviewNote||'').trim();
     if (data.status === 'approved') for (const ref of settlement.paymentRefs) { const [kind,recordId]=ref.split(':'); const collection=kind==='passenger'?db.passengers:db.baggage; const record=collection.find(item=>item.id===Number(recordId)); if(record&&!record.cashHandedOverAt){record.cashHandedOverAt=settlement.reviewedAt;record.cashSettlementId=settlement.id;} }
-    await saveDb(); return json(res,200,{...settlement,driverName:db.users.find(u=>u.id===settlement.driverId)?.name||'Ukendt',submittedByName:db.users.find(u=>u.id===settlement.submittedBy)?.name||'Ukendt',reviewedByName:user.name});
+    audit(user,`cash_settlement.${data.status}`,'cash_settlement',settlement.id,trip.id,{driverId:settlement.driverId,difference:settlement.difference});await saveDb(); return json(res,200,{...settlement,driverName:db.users.find(u=>u.id===settlement.driverId)?.name||'Ukendt',submittedByName:db.users.find(u=>u.id===settlement.submittedBy)?.name||'Ukendt',reviewedByName:user.name});
   }
   return fail(res, 405, 'Handlingen er ikke tilladt');
 }

@@ -342,6 +342,23 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     await expectStatus(baseUrl, 409, '/api/drivers/2', { method: 'DELETE', cookie: admin });
     await expectStatus(baseUrl, 200, `/api/drivers/${spareDriver.id}`, { method: 'DELETE', cookie: admin });
     await expectStatus(baseUrl, 200, `/api/buses/${standardBus.id}`, { method: 'DELETE', cookie: admin });
+
+    const closureTrip = (await expectStatus(baseUrl, 201, '/api/trips', { method:'POST',cookie:admin,body:{ title:'Kontrolleret afslutning',departureAt:new Date(Date.now()+259200000).toISOString(),originId:origin.id,destinationId:destination.id,busId:doubleBus.id,primaryDriverId:2,secondaryDriverId:3 } })).value;
+    const closurePassenger = (await expectStatus(baseUrl,201,`/api/trips/${closureTrip.id}/passengers`,{method:'POST',cookie:admin,body:{name:'Afslutningstest',phone:'90909090',pickupStopId:origin.id,destinationStopId:destination.id,paymentStatus:'unpaid',seatNumber:10}})).value;
+    const blockedClosure = await expectStatus(baseUrl,409,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:admin,body:{status:'completed'}});
+    assert.equal(blockedClosure.value.blockers.passengers.length,1);
+    await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}/passengers`,{method:'PATCH',cookie:driver,body:{id:closurePassenger.id,attendanceStatus:'no_show'}});
+    const completedTrip=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:admin,body:{status:'completed',closeNote:'Alle poster er kontrolleret'}})).value;
+    assert.equal(completedTrip.status,'completed');
+    assert.ok(completedTrip.economyLockedAt);
+    await expectStatus(baseUrl,409,`/api/trips/${closureTrip.id}/passengers`,{method:'POST',cookie:admin,body:{name:'Låst',phone:'91919191',pickupStopId:origin.id,destinationStopId:destination.id,paymentStatus:'unpaid',seatNumber:11}});
+    const audit=(await expectStatus(baseUrl,200,`/api/audit?tripId=${closureTrip.id}`,{cookie:admin})).value;
+    assert.ok(audit.events.some(event=>event.action==='trip.closed'));
+    await expectStatus(baseUrl,403,`/api/audit?tripId=${closureTrip.id}`,{cookie:driver});
+    const reopenedTrip=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:admin,body:{status:'planned',reopenReason:'Passagerlisten skal korrigeres'}})).value;
+    assert.equal(reopenedTrip.status,'planned');
+    await expectStatus(baseUrl,201,`/api/trips/${closureTrip.id}/passengers`,{method:'POST',cookie:admin,body:{name:'Efter genåbning',phone:'92929292',pickupStopId:origin.id,destinationStopId:destination.id,paymentStatus:'unpaid',seatNumber:11}});
+
     const ownAdminProfile=(await expectStatus(baseUrl,200,'/api/profile',{method:'PATCH',cookie:admin,body:{email:'administrator-ny@albaturist.dk',currentPassword:'admin123',newPassword:'administratorens-nye-kode'}})).value;
     assert.equal(ownAdminProfile.user.email,'administrator-ny@albaturist.dk');
     await expectStatus(baseUrl, 200, '/api/logout', { method: 'POST', cookie: admin });
