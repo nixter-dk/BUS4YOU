@@ -79,8 +79,11 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     const portrait = await expectStatus(baseUrl, 200, `/api/drivers/${spareDriver.id}/portrait`, { cookie: admin });
     assert.equal(portrait.response.headers.get('content-type'), 'image/png');
     const salesManager = (await expectStatus(baseUrl, 201, '/api/sales-managers', { method: 'POST', cookie: admin, body: { name: 'Test Salgschef', email: 'testsalg@albaturist.dk', password: 'testpass1234' } })).value;
+    await expectStatus(baseUrl, 201, '/api/sales-managers', { method: 'POST', cookie: admin, body: { name: 'Anden Salgschef', email: 'andensalg@albaturist.dk', password: 'andenpass1234' } });
     const salesLogin = await expectStatus(baseUrl, 200, '/api/login', { method: 'POST', body: { email: 'testsalg@albaturist.dk', password: 'testpass1234' } });
     const sales = cookieFrom(salesLogin.response);
+    const otherSalesLogin = await expectStatus(baseUrl, 200, '/api/login', { method: 'POST', body: { email: 'andensalg@albaturist.dk', password: 'andenpass1234' } });
+    const otherSales = cookieFrom(otherSalesLogin.response);
     const spareLogin = await expectStatus(baseUrl, 200, '/api/login', { method: 'POST', body: { email: 'testdriver@albaturist.dk', password: 'testpass1234' } });
     const spare = cookieFrom(spareLogin.response);
     assert.equal((await expectStatus(baseUrl, 200, '/api/profile/language', { method: 'PATCH', cookie: admin, body: { language: 'en' } })).value.language, 'en');
@@ -351,6 +354,20 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     const salesDashboard = (await expectStatus(baseUrl, 200, '/api/dashboard', { cookie: sales })).value;
     assert.equal(salesDashboard.cashHeld.DKK, 175);
     assert.equal(salesDashboard.cashHeld.expenses.DKK, 50);
+    const personalCashbox = (await expectStatus(baseUrl, 200, '/api/my-cashbox', { cookie: sales })).value;
+    assert.equal(personalCashbox.holder.id, salesManager.id);
+    assert.deepEqual(personalCashbox.summary.gross, { DKK: 225, EUR: 0 });
+    assert.deepEqual(personalCashbox.summary.expenses, { DKK: 50, EUR: 0 });
+    assert.deepEqual(personalCashbox.summary.available, { DKK: 175, EUR: 0 });
+    assert.equal(personalCashbox.byTrip.length, 1);
+    assert.equal(personalCashbox.byTrip[0].tripId, trip.id);
+    const isolatedOtherCashbox = (await expectStatus(baseUrl, 200, '/api/my-cashbox', { cookie: otherSales })).value;
+    assert.deepEqual(isolatedOtherCashbox.summary.available, { DKK: 0, EUR: 0 });
+    assert.deepEqual(isolatedOtherCashbox.byTrip, []);
+    const driverPersonalCashbox = (await expectStatus(baseUrl, 200, '/api/my-cashbox', { cookie: driver })).value;
+    assert.equal(driverPersonalCashbox.holder.role, 'driver');
+    assert.deepEqual(driverPersonalCashbox.summary.available, { DKK: 500, EUR: 60 });
+    await expectStatus(baseUrl, 403, '/api/my-cashbox', { cookie: admin });
 
     const tripBudget = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/transfers`, { method: 'POST', cookie: sales, body: { toDriverId: 2, paymentRefs: [`passenger:${salesTicket.id}`], note: 'Startbudget til turudgifter' } })).value;
     assert.equal(tripBudget.transferType, 'trip_budget');
@@ -428,6 +445,30 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(reopenedTrip.status,'planned');
     await expectStatus(baseUrl,201,`/api/trips/${closureTrip.id}/passengers`,{method:'POST',cookie:admin,body:{name:'Efter genåbning',phone:'92929292',pickupStopId:origin.id,destinationStopId:destination.id,paymentStatus:'unpaid',seatNumber:11}});
 
+    const outsideDriver=(await expectStatus(baseUrl,201,'/api/drivers',{method:'POST',cookie:admin,body:{name:'Chauffør uden for tur',email:'udenfortur@albaturist.dk',password:'udenfortur1234'}})).value;
+    const outsideDriverLogin=await expectStatus(baseUrl,200,'/api/login',{method:'POST',body:{email:'udenfortur@albaturist.dk',password:'udenfortur1234'}}),outsideDriverCookie=cookieFrom(outsideDriverLogin.response);
+    const globalCashPassenger=(await expectStatus(baseUrl,201,`/api/trips/${closureTrip.id}/passengers`,{method:'POST',cookie:driver,body:{name:'Global kontanttest',phone:'93939393',pickupStopId:origin.id,destinationStopId:destination.id,paymentStatus:'cash',paymentCurrency:'DKK',cashAmount:80,seatNumber:12}})).value;
+    const driverToSales=(await expectStatus(baseUrl,201,'/api/cash-transfers',{method:'POST',cookie:driver,body:{toUserId:isolatedOtherCashbox.holder.id,paymentRefs:[`passenger:${globalCashPassenger.id}`],note:'Billetpenge afleveres til salgschef'}})).value;
+    assert.equal(driverToSales.transferType,'sales_handover');
+    await expectStatus(baseUrl,403,'/api/cash-transfers',{method:'PATCH',cookie:driver,body:{id:driverToSales.id,status:'accepted'}});
+    await expectStatus(baseUrl,200,'/api/cash-transfers',{method:'PATCH',cookie:otherSales,body:{id:driverToSales.id,status:'accepted'}});
+    const outsideTripBudget=(await expectStatus(baseUrl,201,'/api/cash-transfers',{method:'POST',cookie:otherSales,body:{toUserId:outsideDriver.id,tripId:null,paymentRefs:[`passenger:${globalCashPassenger.id}`],note:'Budget uden bestemt tur'}})).value;
+    assert.equal(outsideTripBudget.transferType,'general_driver_budget');
+    assert.equal(outsideTripBudget.toUserId,outsideDriver.id);
+    await expectStatus(baseUrl,200,'/api/cash-transfers',{method:'PATCH',cookie:outsideDriverCookie,body:{id:outsideTripBudget.id,status:'accepted'}});
+    const outsideDriverCashbox=(await expectStatus(baseUrl,200,'/api/my-cashbox',{cookie:outsideDriverCookie})).value;
+    assert.deepEqual(outsideDriverCashbox.summary.available,{DKK:80,EUR:0});
+
+    const forwardReceipt=`data:image/png;base64,${Buffer.from('forwarded-expense-receipt').toString('base64')}`;
+    const forwardedExpense=(await expectStatus(baseUrl,201,`/api/trips/${closureTrip.id}/expenses`,{method:'POST',cookie:driver,body:{category:'Parkering',description:'Bilag til salgschef',amount:25,currency:'DKK',paymentMethod:'private',receiptName:'parkering.png',receiptType:'image/png',receiptData:forwardReceipt}})).value;
+    const forwarded=(await expectStatus(baseUrl,200,`/api/expenses/${forwardedExpense.id}`,{method:'PATCH',cookie:driver,body:{forwardToSalesManagerId:isolatedOtherCashbox.holder.id}})).value;
+    assert.equal(forwarded.forwardedToSalesManagerId,isolatedOtherCashbox.holder.id);
+    const forwardedExpenseTrip=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{cookie:otherSales})).value;
+    assert.ok(forwardedExpenseTrip.expenses.some(item=>item.id===forwardedExpense.id&&item.forwardedToSalesManagerId===isolatedOtherCashbox.holder.id));
+    await expectStatus(baseUrl,200,`/api/expenses/${forwardedExpense.id}/receipt`,{cookie:otherSales});
+    const salesCashboxWithReceipt=(await expectStatus(baseUrl,200,'/api/my-cashbox',{cookie:otherSales})).value;
+    assert.ok(salesCashboxWithReceipt.forwardedExpenses.some(item=>item.id===forwardedExpense.id&&item.receiptFile));
+
     const ownAdminProfile=(await expectStatus(baseUrl,200,'/api/profile',{method:'PATCH',cookie:admin,body:{email:'administrator-ny@albaturist.dk',currentPassword:'admin123',newPassword:'administratorens-nye-kode'}})).value;
     assert.equal(ownAdminProfile.user.email,'administrator-ny@albaturist.dk');
     await expectStatus(baseUrl, 200, '/api/logout', { method: 'POST', cookie: admin });
@@ -497,6 +538,10 @@ test('responsive check-in controls stay inside the visible workspace', () => {
   assert.match(app, /function openStandardSeatPicker\(form\)/);
   assert.match(app, /function pickerExtraSeatChoice\(primarySeatNumber,extraSeatNumber\)/);
   assert.match(app, /Tilføj ekstra sæde/);
+  assert.match(app, /async function renderSalesCashbox\(\)/);
+  assert.match(app, /api\/my-cashbox/);
+  assert.match(app, /Min budgetkasse/);
+  assert.match(styles, /\.personal-cashbox-hero\{/);
   assert.match(app, /Indtast passagerens navn, før sædeplanen åbnes/);
   assert.match(app, /\['admin','sales_manager','driver'\]\.includes\(state\.user\?\.role\)/);
   assert.match(app, /picture-left-scroll/);
