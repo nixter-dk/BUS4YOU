@@ -316,7 +316,7 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     await expectStatus(baseUrl, 200, `/api/expenses/${salesExpense.id}/receipt`, { cookie: sales });
     const correctedSalesExpense = (await expectStatus(baseUrl, 200, `/api/expenses/${salesExpense.id}`, { method: 'PATCH', cookie: sales, body: { edit: true, category: salesExpense.category, description: 'Husleje og klargøring af billetkontoret', amount: 50, currency: 'DKK', paymentMethod: 'cash', paidByUserId: salesManager.id, correctionReason: 'Beskrivelsen skulle være mere præcis' } })).value;
     assert.equal(correctedSalesExpense.editHistory.at(-1).editedBy, salesManager.id);
-    await expectStatus(baseUrl, 409, `/api/trips/${trip.id}/transfers`, { method: 'POST', cookie: sales, body: { toDriverId: 2, paymentRefs: [`passenger:${salesTicket.id}`], note: 'Må vente på udgiftsgodkendelse' } });
+    await expectStatus(baseUrl, 409, `/api/trips/${trip.id}/transfers`, { method: 'POST', cookie: sales, body: { toDriverId: 2, amountDKK:125, amountEUR:0, note: 'Må vente på udgiftsgodkendelse' } });
     await expectStatus(baseUrl, 200, `/api/expenses/${salesExpense.id}`, { method: 'PATCH', cookie: admin, body: { status: 'approved', reviewNote: 'Dokumenteret forberedelsesudgift' } });
     const expense = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/expenses`, { method: 'POST', cookie: driver, body: { category: 'Brændstof', description: 'Tankning', amount: 120, currency: 'DKK', paymentMethod: 'private' } })).value;
     assert.equal(expense.status, 'pending');
@@ -369,7 +369,7 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.deepEqual(driverPersonalCashbox.summary.available, { DKK: 500, EUR: 60 });
     await expectStatus(baseUrl, 403, '/api/my-cashbox', { cookie: admin });
 
-    const tripBudget = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/transfers`, { method: 'POST', cookie: sales, body: { toDriverId: 2, paymentRefs: [`passenger:${salesTicket.id}`], note: 'Startbudget til turudgifter' } })).value;
+    const tripBudget = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/transfers`, { method: 'POST', cookie: sales, body: { toDriverId: 2, amountDKK:125, amountEUR:0, note: 'Startbudget til turudgifter' } })).value;
     assert.equal(tripBudget.transferType, 'trip_budget');
     assert.deepEqual(tripBudget.totals, { DKK: 125, EUR: 0 });
     await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/transfers`, { method: 'PATCH', cookie: sales, body: { id: tripBudget.id, status: 'accepted' } });
@@ -385,8 +385,8 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.deepEqual(driverCashBox.budgetTotals, { DKK: 125, EUR: 0 });
     assert.equal(driverCashBox.budgetPayments, 1);
     const budgetTripView = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}`, { cookie: sales })).value;
-    assert.equal(budgetTripView.passengers.find(item => item.id === salesTicket.id).cashHolderUserId, 2);
-    assert.deepEqual(budgetTripView.transfers.find(item => item.id === tripBudget.id).paymentRefs, [`passenger:${salesTicket.id}`]);
+    assert.equal(budgetTripView.passengers.find(item => item.id === salesTicket.id).cashHolderUserId, salesManager.id);
+    assert.deepEqual(budgetTripView.transfers.find(item => item.id === tripBudget.id).paymentRefs, []);
 
     const driverSettlement = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/settlements`, { method: 'POST', cookie: driver, body: { deliveredDKK: 625, deliveredEUR: 60 } })).value;
     assert.deepEqual(driverSettlement.expected, { DKK: 625, EUR: 60 });
@@ -452,12 +452,15 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(driverToSales.transferType,'sales_handover');
     await expectStatus(baseUrl,403,'/api/cash-transfers',{method:'PATCH',cookie:driver,body:{id:driverToSales.id,status:'accepted'}});
     await expectStatus(baseUrl,200,'/api/cash-transfers',{method:'PATCH',cookie:otherSales,body:{id:driverToSales.id,status:'accepted'}});
-    const outsideTripBudget=(await expectStatus(baseUrl,201,'/api/cash-transfers',{method:'POST',cookie:otherSales,body:{toUserId:outsideDriver.id,tripId:null,paymentRefs:[`passenger:${globalCashPassenger.id}`],note:'Budget uden bestemt tur'}})).value;
+    const outsideTripBudget=(await expectStatus(baseUrl,201,'/api/cash-transfers',{method:'POST',cookie:otherSales,body:{toUserId:outsideDriver.id,tripId:null,amountDKK:80,amountEUR:0,note:'Budget uden bestemt tur'}})).value;
     assert.equal(outsideTripBudget.transferType,'general_driver_budget');
     assert.equal(outsideTripBudget.toUserId,outsideDriver.id);
+    assert.deepEqual(outsideTripBudget.paymentRefs,[]);
     await expectStatus(baseUrl,200,'/api/cash-transfers',{method:'PATCH',cookie:outsideDriverCookie,body:{id:outsideTripBudget.id,status:'accepted'}});
     const outsideDriverCashbox=(await expectStatus(baseUrl,200,'/api/my-cashbox',{cookie:outsideDriverCookie})).value;
     assert.deepEqual(outsideDriverCashbox.summary.available,{DKK:80,EUR:0});
+    assert.deepEqual(outsideDriverCashbox.summary.budgetTotals,{DKK:80,EUR:0});
+    assert.ok(outsideDriverCashbox.transferable.some(item=>item.kind==='budget'&&item.name==='Budget fra salgschef'));
 
     const forwardReceipt=`data:image/png;base64,${Buffer.from('forwarded-expense-receipt').toString('base64')}`;
     const forwardedExpense=(await expectStatus(baseUrl,201,`/api/trips/${closureTrip.id}/expenses`,{method:'POST',cookie:driver,body:{category:'Parkering',description:'Bilag til salgschef',amount:25,currency:'DKK',paymentMethod:'private',receiptName:'parkering.png',receiptType:'image/png',receiptData:forwardReceipt}})).value;
@@ -546,6 +549,9 @@ test('responsive check-in controls stay inside the visible workspace', () => {
   assert.match(app, /async function renderSalesCashbox\(\)/);
   assert.match(app, /api\/my-cashbox/);
   assert.match(app, /Min budgetkasse/);
+  assert.match(app, /function budgetAmountFields/);
+  assert.match(app, /Separat budgetoverførsel/);
+  assert.match(app, /Chaufføren ser kun beløb, valuta, formål og kvitteringsnummer/);
   assert.match(styles, /\.personal-cashbox-hero\{/);
   assert.match(app, /Indtast passagerens navn, før sædeplanen åbnes/);
   assert.match(app, /\['admin','sales_manager','driver'\]\.includes\(state\.user\?\.role\)/);
