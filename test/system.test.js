@@ -188,6 +188,12 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     const adminExtraSeatTicket = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Administrator ekstrasaede', phone: '55555557', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'cash', paymentCurrency: 'DKK', cashAmount: 90, seatNumber: 9, extraSeatNumber: 10, extraSeatAmount: 50, extraSeatCurrency: 'DKK', extraSeatFree: false } })).value;
     assert.equal(adminExtraSeatTicket.extraSeatNumber, 10);
     await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: admin, body: { id: adminExtraSeatTicket.id, deletionReason: 'Fjerner administratortesten igen' } });
+    const payLaterExtraSeatTicket = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Ekstrasaede betales senere', phone: '55555558', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'pay_dk', seatNumber: 9, extraSeatNumber: 10, extraSeatAmount: 50, extraSeatCurrency: 'DKK', extraSeatFree: false } })).value;
+    assert.equal(payLaterExtraSeatTicket.paymentStatus, 'pay_dk');
+    assert.equal(payLaterExtraSeatTicket.extraSeatNumber, 10);
+    assert.equal(payLaterExtraSeatTicket.extraSeatAmount, 50);
+    assert.equal(payLaterExtraSeatTicket.cashAmount, 0);
+    await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: admin, body: { id: payLaterExtraSeatTicket.id, deletionReason: 'Fjerner betal-senere-testen igen' } });
     const ticketWithoutExtraSeat = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: sales, body: { name: 'Billet uden ekstrasaede', phone: '55555556', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'pay_dk', seatNumber: 9 } })).value;
     await expectStatus(baseUrl, 409, `/api/trips/${trip.id}/passengers`, { method: 'PATCH', cookie: sales, body: { id: ticketWithoutExtraSeat.id, edit: true, name: ticketWithoutExtraSeat.name, phone: ticketWithoutExtraSeat.phone, pickupStopId: ticketWithoutExtraSeat.pickupStopId, destinationStopId: ticketWithoutExtraSeat.destinationStopId, seatNumber: 9, extraSeatNumber: 10, extraSeatFree: true, correctionReason: 'Forsoger at tilkoebe ekstrasaede bagefter' } });
     await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: sales, body: { id: ticketWithoutExtraSeat.id, deletionReason: 'Fjerner testen igen' } });
@@ -489,6 +495,8 @@ test('responsive check-in controls stay inside the visible workspace', () => {
   assert.match(app, /Her registreres kun afgangstid/);
   assert.match(app, /function openPictureSeatPicker\(form\)/);
   assert.match(app, /function openStandardSeatPicker\(form\)/);
+  assert.match(app, /function pickerExtraSeatChoice\(primarySeatNumber,extraSeatNumber\)/);
+  assert.match(app, /Tilføj ekstra sæde/);
   assert.match(app, /Indtast passagerens navn, før sædeplanen åbnes/);
   assert.match(app, /\['admin','sales_manager','driver'\]\.includes\(state\.user\?\.role\)/);
   assert.match(app, /picture-left-scroll/);

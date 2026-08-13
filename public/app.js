@@ -1045,8 +1045,27 @@ function wireExtraSeatFields(form){
   const update=()=>{const active=Boolean(seatSelect.value),free=freeSelect.value==='true';freeSelect.disabled=!active;amount.disabled=!active||free;currency.disabled=!active||free;reason.disabled=!active;amount.required=active&&!free;if(free)amount.value='0';if(summary)summary.textContent=!active?'Intet ekstra sæde valgt':free?`Sæde ${seatSelect.value} reserveres gratis`:`Sæde ${seatSelect.value} · ekstra ${amount.value||'0'} ${currency.value}`};
   form.elements.seatNumber?.addEventListener('change',()=>{refreshOptions();update()});$$('[data-seat]').forEach(button=>button.addEventListener('click',()=>{refreshOptions();update()}));seatSelect.onchange=update;freeSelect.onchange=update;amount.oninput=update;currency.onchange=update;refreshOptions();update();
 }
+function pickerExtraSeatChoice(primarySeatNumber,extraSeatNumber){
+  const adjacent=adjacentExtraSeat(primarySeatNumber),available=adjacent&&!adjacent.passengerId;
+  if(!primarySeatNumber)return'';
+  if(!available)return'<div class="picture-extra-seat unavailable"><strong>Ekstra sæde</strong><span>Nabosædet er optaget</span></div>';
+  const selected=Number(extraSeatNumber)===adjacent.number;
+  return`<button type="button" class="picture-extra-seat ${selected?'selected':''}" id="pictureExtraSeatToggle" data-extra-seat="${adjacent.number}"><span>${selected?'✓':'+'}</span><div><strong>${selected?`Ekstra sæde ${adjacent.number} valgt`:`Tilføj ekstra sæde ${adjacent.number}`}</strong><small>Ledigt sæde direkte ved siden af · pris eller gratis vælges efterfølgende</small></div></button>`;
+}
+const buildPictureSeatPickerBeforeExtraChoice=buildPictureSeatPicker;
+buildPictureSeatPicker=function(pendingSeat,pendingExtraSeat){return buildPictureSeatPickerBeforeExtraChoice(pendingSeat).replace('</small></section></div><button type="button" class="picture-continue"',`</small>${pickerExtraSeatChoice(pendingSeat,pendingExtraSeat)}</section></div><button type="button" class="picture-continue"`)};
+const buildStandardSeatPickerBeforeExtraChoice=buildStandardSeatPicker;
+buildStandardSeatPicker=function(pendingSeat,pendingExtraSeat){return buildStandardSeatPickerBeforeExtraChoice(pendingSeat).replace('</small></section></div><button type="button" class="picture-continue"',`</small>${pickerExtraSeatChoice(pendingSeat,pendingExtraSeat)}</section></div><button type="button" class="picture-continue"`)};
+function openSeatPickerWithExtra(form,isDouble){
+  let pendingSeat=Number(form.elements.seatNumber.value)||null,pendingExtraSeat=Number(form.elements.extraSeatNumber?.value)||null;const dialog=$('#modal');dialog.classList.add('seat-picker-dialog');
+  const close=()=>{dialog.close();dialog.classList.remove('seat-picker-dialog')};
+  const draw=()=>{const builder=isDouble?buildPictureSeatPicker:buildStandardSeatPicker;$('#modalBody').innerHTML=builder(pendingSeat,pendingExtraSeat);$$('[data-picker-seat]').forEach(button=>button.onclick=()=>{pendingSeat=Number(button.dataset.pickerSeat);const adjacent=adjacentExtraSeat(pendingSeat);if(!adjacent||adjacent.number!==pendingExtraSeat)pendingExtraSeat=null;draw()});const toggle=$('#pictureExtraSeatToggle');if(toggle)toggle.onclick=()=>{pendingExtraSeat=Number(toggle.dataset.extraSeat)===pendingExtraSeat?null:Number(toggle.dataset.extraSeat);draw()};$('#pictureSeatBack').onclick=close;$('#pictureSeatContinue').onclick=()=>{form.elements.seatNumber.value=String(pendingSeat);form.elements.seatNumber.dispatchEvent(new Event('change'));if(form.elements.extraSeatNumber){form.elements.extraSeatNumber.value=pendingExtraSeat?String(pendingExtraSeat):'';form.elements.extraSeatNumber.dispatchEvent(new Event('change'))}const seat=state.trip.seats.find(item=>item.number===pendingSeat),label=form.querySelector('.seat-picker-launcher strong'),note=form.querySelector('.seat-picker-launcher small');if(label)label.textContent=`Sæde ${pendingSeat}${pendingExtraSeat?` + ${pendingExtraSeat}`:''} valgt`;if(note)note.textContent=`${isDouble?(seat.deck==='upper'?'Overdæk':'Nederdæk'):'Standard sæde'}${seat.surcharge?` · +${seat.surcharge} kr.`:''}${pendingExtraSeat?' · ekstrasæde valgt':''}`;close()}};
+  draw();dialog.showModal();
+}
+openPictureSeatPicker=function(form){openSeatPickerWithExtra(form,true)};
+openStandardSeatPicker=function(form){openSeatPickerWithExtra(form,false)};
 const passengerFormBeforeExtraSeat=passengerForm;
-passengerForm=function(){let html=passengerFormBeforeExtraSeat();if(!['admin','sales_manager','driver'].includes(state.user?.role))return html;html=html.replace('<div class="wide"><strong>Vælg sæde</strong>',`${extraSeatFields()}<div class="wide"><strong>Vælg sæde</strong>`);return html.replace('Kontant beløb<input name="cashAmount"','Billetbeløb (uden ekstra sæde)<input name="cashAmount"')};
+passengerForm=function(){let html=passengerFormBeforeExtraSeat();if(!['admin','sales_manager','driver'].includes(state.user?.role))return html;html=html.replace('<button class="primary wide">Opret passager</button>',`${extraSeatFields()}<button class="primary wide">Opret passager</button>`);return html.replace('Kontant beløb<input name="cashAmount"','Billetbeløb (uden ekstra sæde)<input name="cashAmount"')};
 const wirePassengerFormBeforeExtraSeat=wirePassengerForm;
 wirePassengerForm=function(){wirePassengerFormBeforeExtraSeat();const form=$('#passengerForm');if(!form||!form.elements.extraSeatNumber)return;wireExtraSeatFields(form);const submit=form.onsubmit;form.onsubmit=async event=>{const before=state.trip.passengers.length;await submit(event);if(state.trip?.passengers?.length>before){try{state.trip=await api(`/api/trips/${state.trip.trip.id}`);renderTrip()}catch(error){toast(error.message)}}}};
 
@@ -1069,6 +1088,7 @@ showPassengerActionSheet=function(id){showPassengerActionSheetBeforeExtraSeat(id
   ['Intet ekstra sæde','Pa ulëse shtesë','Kein zusätzlicher Sitz','No additional seat'],
   ['Vælg hovedsæde først','Zgjidhni fillimisht ulësen kryesore','Zuerst Hauptsitz wählen','Choose the main seat first'],
   ['Nabosædet er optaget','Ulësja ngjitur është e zënë','Der Nachbarsitz ist belegt','The adjacent seat is occupied'],
+  ['Ledigt sæde direkte ved siden af · pris eller gratis vælges efterfølgende','Ulëse e lirë drejtpërdrejt pranë · çmimi ose falas zgjidhet më pas','Freier Sitz direkt daneben · Preis oder kostenlos wird anschließend gewählt','Available seat directly beside · choose price or free afterwards'],
   ['Prisvalg','Zgjedhja e çmimit','Preisoption','Price option'],
   ['Betalt ekstra sæde','Ulëse shtesë me pagesë','Bezahlter Zusatzsitz','Paid additional seat'],
   ['Gratis ekstra sæde','Ulëse shtesë falas','Kostenloser Zusatzsitz','Free additional seat'],
@@ -1076,6 +1096,8 @@ showPassengerActionSheet=function(id){showPassengerActionSheetBeforeExtraSeat(id
   ['Intet ekstra sæde valgt','Nuk është zgjedhur ulëse shtesë','Kein Zusatzsitz ausgewählt','No additional seat selected']
 ].forEach(row=>addTranslation(...row));
 dynamicTranslationPatterns.push(
+  [/^Tilføj ekstra sæde (\d+)$/,{sq:n=>`Shto ulësen shtesë ${n}`,de:n=>`Zusatzsitz ${n} hinzufügen`,en:n=>`Add additional seat ${n}`}],
+  [/^Ekstra sæde (\d+) valgt$/,{sq:n=>`Ulësja shtesë ${n} u zgjodh`,de:n=>`Zusatzsitz ${n} ausgewählt`,en:n=>`Additional seat ${n} selected`}],
   [/^Sæde (\d+) · direkte ved siden af$/,{sq:n=>`Ulësja ${n} · drejtpërdrejt pranë`,de:n=>`Sitz ${n} · direkt daneben`,en:n=>`Seat ${n} · directly beside`}],
   [/^Sæde (\d+) reserveres gratis$/,{sq:n=>`Ulësja ${n} rezervohet falas`,de:n=>`Sitz ${n} wird kostenlos reserviert`,en:n=>`Seat ${n} is reserved free of charge`}],
   [/^Sæde (\d+) · ekstra ([\d.,]+) (DKK|EUR)$/,{sq:(n,a,c)=>`Ulësja ${n} · shtesë ${a} ${c}`,de:(n,a,c)=>`Sitz ${n} · zusätzlich ${a} ${c}`,en:(n,a,c)=>`Seat ${n} · additional ${a} ${c}`}]
