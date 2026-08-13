@@ -308,6 +308,15 @@ function seatMap(tripId) {
     return { number, deck: number <= lowerDeckSeats ? 'lower' : 'upper', type: isFront ? 'front' : isTable ? 'table' : 'standard', surcharge: isFront ? 100 : isTable ? 75 : 0, passengerId: reservation?.passengerId || null,reservationType:reservation?.reservationType||null };
   });
 }
+function adjacentSeatNumber(tripId,seatNumber) {
+  const seats=seatMap(tripId),seat=seats.find(candidate=>candidate.number===Number(seatNumber));
+  if(!seat)return null;
+  const deckSeats=seats.filter(candidate=>candidate.deck===seat.deck),deckIndex=deckSeats.findIndex(candidate=>candidate.number===seat.number);
+  if(deckIndex<0)return null;
+  const pairIndex=deckIndex%2===0?deckIndex+1:deckIndex-1,adjacent=deckSeats[pairIndex];
+  return adjacent&&Math.floor(pairIndex/4)===Math.floor(deckIndex/4)?adjacent.number:null;
+}
+function isAdjacentSeat(tripId,seatNumber,extraSeatNumber) { return adjacentSeatNumber(tripId,seatNumber)===Number(extraSeatNumber); }
 function unsettledCashRecords(tripId,driverId) {
   return [...db.passengers.map(record=>({record,kind:'passenger'})),...db.baggage.map(record=>({record,kind:'baggage'}))].filter(item=>item.record.tripId===tripId&&item.record.paymentStatus==='cash'&&['bus','departure'].includes(item.record.paymentLocation)&&item.record.cashHolderUserId===driverId&&!item.record.cashHandedOverAt);
 }
@@ -742,6 +751,7 @@ async function api(req, res, pathname) {
     if(extraSeatNumber){
       if(!['sales_manager','driver'].includes(user.role))return fail(res,403,'Kun salgschefen eller en tildelt chauffør kan tilføje en ekstra siddeplads');
       const extraSeat=seatMap(trip.id).find(candidate=>candidate.number===extraSeatNumber);if(!extraSeat||extraSeat.passengerId||extraSeatNumber===seat.number)return fail(res,409,'Den valgte ekstra siddeplads er ikke ledig');
+      if(!isAdjacentSeat(trip.id,seat.number,extraSeatNumber))return fail(res,400,'Ekstrasædet skal være det ledige sæde direkte ved siden af passagerens sæde');
       if(!extraSeatFree&&(!(extraSeatAmount>0)||data.paymentStatus!=='cash'))return fail(res,400,'Angiv ekstra sædebeløb, eller markér sædet som gratis. Betalt ekstrasæde kræver kontant betaling');
       if(!extraSeatFree&&extraSeatCurrency!==paymentCurrency)return fail(res,400,'Ekstrasædet skal registreres i samme valuta som billetten');
     }
@@ -767,15 +777,18 @@ async function api(req, res, pathname) {
       if(ticketNumber&&db.passengers.some(candidate=>candidate.tripId===trip.id&&candidate.id!==passenger.id&&String(candidate.ticketNumber||'').toLocaleLowerCase('da-DK')===ticketNumber.toLocaleLowerCase('da-DK')))return fail(res,409,'Billetnummeret bruges allerede på denne tur');
       const updates={name,ticketNumber,phone,pickupStopId,destinationStopId,seatNumber,seatType:seat.type,seatSurcharge:seat.surcharge};
       if(['sales_manager','driver'].includes(user.role)&&Object.prototype.hasOwnProperty.call(data,'extraSeatNumber')){
+        if(!passenger.extraSeatNumber&&data.extraSeatNumber)return fail(res,409,'Et ekstrasæde kan kun bestilles sammen med den nye billet');
         const effectivePaymentCurrency=['DKK','EUR'].includes(data.paymentCurrency)?data.paymentCurrency:(passenger.paymentCurrency||'DKK'),extraSeatNumber=data.extraSeatNumber?Number(data.extraSeatNumber):null,extraSeatFree=Boolean(extraSeatNumber&&(data.extraSeatFree===true||data.extraSeatFree==='true')),extraSeatAmount=extraSeatNumber&&!extraSeatFree?Number(data.extraSeatAmount||0):0,extraSeatCurrency=['DKK','EUR'].includes(data.extraSeatCurrency)?data.extraSeatCurrency:effectivePaymentCurrency;
         if(extraSeatNumber){
           const extraSeat=seatMap(trip.id).find(candidate=>candidate.number===extraSeatNumber);
           if(!extraSeat||extraSeatNumber===seatNumber||(extraSeat.passengerId&&extraSeat.passengerId!==passenger.id))return fail(res,409,'Den valgte ekstra siddeplads er ikke ledig');
+          if(!isAdjacentSeat(trip.id,seatNumber,extraSeatNumber))return fail(res,400,'Ekstrasædet skal være det ledige sæde direkte ved siden af passagerens sæde');
           if(!extraSeatFree&&(!(extraSeatAmount>0)||passenger.paymentStatus!=='cash'))return fail(res,400,'Angiv ekstra sædebeløb, eller markér sædet som gratis. Betalt ekstrasæde kræver kontant betaling');
           if(!extraSeatFree&&extraSeatCurrency!==effectivePaymentCurrency)return fail(res,400,'Ekstrasædet skal registreres i samme valuta som billetten');
         }
         Object.assign(updates,{extraSeatNumber,extraSeatAmount,extraSeatCurrency,extraSeatFree,extraSeatReason:extraSeatNumber?String(data.extraSeatReason||'').trim():''});
       }else if(Object.prototype.hasOwnProperty.call(data,'extraSeatNumber'))return fail(res,403,'Kun salgschefen eller en tildelt chauffør kan ændre en ekstra siddeplads');
+      if(passenger.extraSeatNumber&&!Object.prototype.hasOwnProperty.call(updates,'extraSeatNumber')&&!isAdjacentSeat(trip.id,seatNumber,passenger.extraSeatNumber))return fail(res,400,'Det nye hovedsæde skal fortsat ligge ved siden af det registrerede ekstrasæde');
       if(passenger.paymentStatus==='free')updates.freeTicketReason=String(data.freeTicketReason||'').trim();
       if(passenger.paymentStatus==='cash'&&(Object.prototype.hasOwnProperty.call(data,'cashAmount')||Object.prototype.hasOwnProperty.call(data,'paymentCurrency'))){
         if(passenger.cashHandedOverAt||hasPendingSettlementReference(`passenger:${passenger.id}`)||hasPendingTransferReference(`passenger:${passenger.id}`))return fail(res,409,'Betalingen er låst af en igangværende eller afsluttet kontantafstemning');
