@@ -538,6 +538,11 @@ test('responsive check-in controls stay inside the visible workspace', () => {
   assert.match(app, /function openStandardSeatPicker\(form\)/);
   assert.match(app, /function pickerExtraSeatChoice\(primarySeatNumber,extraSeatNumber\)/);
   assert.match(app, /Tilføj ekstra sæde/);
+  assert.match(app, /name="extraSeatRequested"/);
+  assert.match(app, /Bestil et ekstra sæde ved siden af/);
+  assert.match(app, /function openSeatPickerWithAutomaticExtra/);
+  assert.match(app, /form\.cashAmount\.disabled=!isCash/);
+  assert.match(styles, /\.extra-seat-request\{/);
   assert.match(app, /async function renderSalesCashbox\(\)/);
   assert.match(app, /api\/my-cashbox/);
   assert.match(app, /Min budgetkasse/);

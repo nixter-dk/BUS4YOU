@@ -355,7 +355,7 @@ const expenseRendererBeforeApprovalStatus=renderExpensesTab;renderExpensesTab=fu
 // Gratis billetter er en afsluttet billetstatus uden betaling eller omsætning.
 passengerForm=function(){return`<section class="panel"><div class="panel-head"><h2>Ny passager</h2></div><form class="form" id="passengerForm" style="padding:20px"><label>Navn<input name="name" required></label><label>Telefon<input name="phone" required></label><label>Fra<select name="pickupStopId">${stopOptions()}</select></label><label>Til<select name="destinationStopId">${stopOptions()}</select></label><label>Billetstatus<select name="paymentStatus"><option value="unpaid">Ikke betalt</option><option value="pay_dk">Betaler i DK</option><option value="pay_mk">Betaler i MK</option><option value="cash">Betalt kontant</option><option value="free">Gratis billet</option></select></label><label data-cash-ticket-field hidden>Valuta<select name="paymentCurrency"><option value="DKK">DKK – Danske kroner</option><option value="EUR">EUR – Euro</option></select></label><label data-cash-ticket-field hidden>Kontant beløb<input name="cashAmount" type="number" min="0.01" step="0.01" value="0"></label><label class="wide" data-free-ticket-field hidden>Begrundelse for gratis billet<input name="freeTicketReason" placeholder="F.eks. barn, medarbejder, kampagne eller særlig aftale"></label><div class="wide"><strong>Vælg sæde</strong>${seatGrid(true)}<input type="hidden" name="seatNumber"></div><button class="primary wide">Opret passager</button></form></section>`};
 
-const wirePassengerFormBeforeFreeTickets=wirePassengerForm;wirePassengerForm=function(){wirePassengerFormBeforeFreeTickets();const form=$('#passengerForm');if(!form)return;const update=()=>{const status=form.paymentStatus.value,isCash=status==='cash',isFree=status==='free';$$('[data-cash-ticket-field]').forEach(field=>field.hidden=!isCash);$$('[data-free-ticket-field]').forEach(field=>field.hidden=!isFree);form.cashAmount.required=isCash;form.freeTicketReason.disabled=!isFree};form.paymentStatus.onchange=update;update()};
+const wirePassengerFormBeforeFreeTickets=wirePassengerForm;wirePassengerForm=function(){wirePassengerFormBeforeFreeTickets();const form=$('#passengerForm');if(!form)return;const update=()=>{const status=form.paymentStatus.value,isCash=status==='cash',isFree=status==='free';$$('[data-cash-ticket-field]').forEach(field=>field.hidden=!isCash);$$('[data-free-ticket-field]').forEach(field=>field.hidden=!isFree);form.cashAmount.required=isCash;form.cashAmount.disabled=!isCash;form.paymentCurrency.disabled=!isCash;form.freeTicketReason.disabled=!isFree};form.paymentStatus.onchange=update;update()};
 
 passengerRow=function(p){const status=p.attendanceStatus||(p.checkedIn?'checked_in':'pending'),statusText={pending:'Afventer',checked_in:'Checket ind',no_show:'Udeblevet'}[status],payment=p.paymentStatus==='cash'?`<span class="payment-status paid">${money(p.cashAmount,p.paymentCurrency||'DKK')}</span>`:p.paymentStatus==='free'?`<span class="payment-status free">Gratis billet</span>`:`<button class="mini payment-action" data-pay-passenger="${p.id}">Registrer betaling</button>`;return`<tr data-passenger-row data-search="${esc(`${p.name} ${p.phone} ${p.seatNumber}`.toLowerCase())}" data-attendance="${status}" data-payment="${p.paymentStatus}" data-pickup="${p.pickupStopId}"><td><strong>${esc(p.name)}</strong><br><a class="phone-link" href="tel:${esc(p.phone)}">${esc(p.phone)}</a></td><td>${esc(stopName(p.pickupStopId))}<br><small>til ${esc(stopName(p.destinationStopId))}</small></td><td><span class="seat-badge">${p.seatNumber}</span></td><td><span class="attendance ${status}">${statusText}</span></td><td>${payment}</td><td><div class="row-actions"><button class="mini ${p.checkedIn?'done':''}" data-check="${p.id}">${p.checkedIn?'✓ Inde':'Check ind'}</button>${!p.checkedIn&&status!=='no_show'?`<button class="icon-action" data-no-show="${p.id}" title="Markér udeblevet">×</button>`:''}<button class="icon-action" data-passenger-detail="${p.id}" title="Se detaljer">•••</button></div></td></tr>`};
 
@@ -1086,6 +1086,9 @@ function extraSeatOptions(primarySeatNumber,selected=null,passengerId=null){
   const adjacent=adjacentExtraSeat(primarySeatNumber),available=adjacent&&(!adjacent.passengerId||(adjacent.passengerId===passengerId&&adjacent.reservationType==='extra'))?adjacent:null;
   return`<option value="">${primarySeatNumber?(available?'Intet ekstra sæde':'Nabosædet er optaget'):'Vælg hovedsæde først'}</option>${available?`<option value="${available.number}" ${Number(selected)===available.number?'selected':''}>Sæde ${available.number} · direkte ved siden af</option>`:''}`;
 }
+function extraSeatRequestField(){
+  return`<label class="wide extra-seat-request"><input type="checkbox" name="extraSeatRequested" value="true"><span><strong>Bestil et ekstra sæde ved siden af</strong><small>Markér her først. Når hovedsædet vælges på sædeplanen, vælger systemet automatisk det ledige nabosæde.</small></span></label>`;
+}
 function extraSeatFields(passenger=null){
   const isFree=passenger?.extraSeatFree===true,currency=passenger?.extraSeatCurrency||passenger?.paymentCurrency||'DKK';
   return`<fieldset class="wide extra-seat-fields"><legend>Ekstra siddeplads ved siden af</legend><p>Vælg hovedsædet først. Kun det ledige sæde direkte ved siden af kan bestilles sammen med billetten.</p><div class="extra-seat-grid"><label>Ekstra sæde<select name="extraSeatNumber">${extraSeatOptions(passenger?.seatNumber,passenger?.extraSeatNumber,passenger?.id)}</select></label><label>Prisvalg<select name="extraSeatFree"><option value="false" ${!isFree?'selected':''}>Betalt ekstra sæde</option><option value="true" ${isFree?'selected':''}>Gratis ekstra sæde</option></select></label><label data-extra-seat-price>Beløb<input name="extraSeatAmount" type="number" min="0.01" step="0.01" value="${passenger?.extraSeatAmount||0}"></label><label data-extra-seat-price>Valuta<select name="extraSeatCurrency"><option value="DKK" ${currency==='DKK'?'selected':''}>DKK</option><option value="EUR" ${currency==='EUR'?'selected':''}>EUR</option></select></label><label class="wide">Bemærkning <small>valgfrit</small><input name="extraSeatReason" maxlength="160" value="${esc(passenger?.extraSeatReason||'')}" placeholder="F.eks. komfort, helbred eller særlig aftale"></label></div><small class="extra-seat-summary" data-extra-seat-summary></small></fieldset>`;
@@ -1108,17 +1111,84 @@ buildPictureSeatPicker=function(pendingSeat,pendingExtraSeat){return buildPictur
 const buildStandardSeatPickerBeforeExtraChoice=buildStandardSeatPicker;
 buildStandardSeatPicker=function(pendingSeat,pendingExtraSeat){return buildStandardSeatPickerBeforeExtraChoice(pendingSeat).replace('</small></section></div><button type="button" class="picture-continue"',`</small>${pickerExtraSeatChoice(pendingSeat,pendingExtraSeat)}</section></div><button type="button" class="picture-continue"`)};
 function openSeatPickerWithExtra(form,isDouble){
-  let pendingSeat=Number(form.elements.seatNumber.value)||null,pendingExtraSeat=Number(form.elements.extraSeatNumber?.value)||null;const dialog=$('#modal');dialog.classList.add('seat-picker-dialog');
+  let pendingSeat=Number(form.elements.seatNumber.value)||null,pendingExtraSeat=Number(form.elements.extraSeatNumber?.value)||null;const extraSeatRequested=Boolean(form.elements.extraSeatRequested?.checked),dialog=$('#modal');dialog.classList.add('seat-picker-dialog');
   const close=()=>{dialog.close();dialog.classList.remove('seat-picker-dialog')};
   const draw=()=>{const builder=isDouble?buildPictureSeatPicker:buildStandardSeatPicker;$('#modalBody').innerHTML=builder(pendingSeat,pendingExtraSeat);$$('[data-picker-seat]').forEach(button=>button.onclick=()=>{pendingSeat=Number(button.dataset.pickerSeat);const adjacent=adjacentExtraSeat(pendingSeat);if(!adjacent||adjacent.number!==pendingExtraSeat)pendingExtraSeat=null;draw()});const toggle=$('#pictureExtraSeatToggle');if(toggle)toggle.onclick=()=>{pendingExtraSeat=Number(toggle.dataset.extraSeat)===pendingExtraSeat?null:Number(toggle.dataset.extraSeat);draw()};$('#pictureSeatBack').onclick=close;$('#pictureSeatContinue').onclick=()=>{form.elements.seatNumber.value=String(pendingSeat);form.elements.seatNumber.dispatchEvent(new Event('change'));if(form.elements.extraSeatNumber){form.elements.extraSeatNumber.value=pendingExtraSeat?String(pendingExtraSeat):'';form.elements.extraSeatNumber.dispatchEvent(new Event('change'))}const seat=state.trip.seats.find(item=>item.number===pendingSeat),label=form.querySelector('.seat-picker-launcher strong'),note=form.querySelector('.seat-picker-launcher small');if(label)label.textContent=`Sæde ${pendingSeat}${pendingExtraSeat?` + ${pendingExtraSeat}`:''} valgt`;if(note)note.textContent=`${isDouble?(seat.deck==='upper'?'Overdæk':'Nederdæk'):'Standard sæde'}${seat.surcharge?` · +${seat.surcharge} kr.`:''}${pendingExtraSeat?' · ekstrasæde valgt':''}`;close()}};
   draw();dialog.showModal();
 }
 openPictureSeatPicker=function(form){openSeatPickerWithExtra(form,true)};
 openStandardSeatPicker=function(form){openSeatPickerWithExtra(form,false)};
+function openSeatPickerWithAutomaticExtra(form,isDouble){
+  let pendingSeat=Number(form.elements.seatNumber.value)||null;
+  let pendingExtraSeat=Number(form.elements.extraSeatNumber?.value)||null;
+  const extraSeatRequested=Boolean(form.elements.extraSeatRequested?.checked);
+  const dialog=$('#modal');
+  dialog.classList.add('seat-picker-dialog');
+  const close=()=>{dialog.close();dialog.classList.remove('seat-picker-dialog')};
+  const draw=()=>{
+    const builder=isDouble?buildPictureSeatPicker:buildStandardSeatPicker;
+    $('#modalBody').innerHTML=builder(pendingSeat,pendingExtraSeat);
+    $$('[data-picker-seat]').forEach(button=>button.onclick=()=>{
+      pendingSeat=Number(button.dataset.pickerSeat);
+      const adjacent=adjacentExtraSeat(pendingSeat);
+      const available=adjacent&&!adjacent.passengerId;
+      if(extraSeatRequested){
+        pendingExtraSeat=available?adjacent.number:null;
+        if(!available)toast('Nabosædet er optaget. Vælg et andet hovedsæde for at bestille et ekstra sæde.');
+      }else if(!adjacent||adjacent.number!==pendingExtraSeat){
+        pendingExtraSeat=null;
+      }
+      draw();
+    });
+    const toggle=$('#pictureExtraSeatToggle');
+    if(toggle)toggle.onclick=()=>{pendingExtraSeat=Number(toggle.dataset.extraSeat)===pendingExtraSeat?null:Number(toggle.dataset.extraSeat);draw()};
+    $('#pictureSeatBack').onclick=close;
+    $('#pictureSeatContinue').onclick=()=>{
+      if(extraSeatRequested&&!pendingExtraSeat)return toast('Vælg et hovedsæde med et ledigt nabosæde');
+      form.elements.seatNumber.value=String(pendingSeat);
+      form.elements.seatNumber.dispatchEvent(new Event('change'));
+      if(form.elements.extraSeatNumber){
+        form.elements.extraSeatNumber.value=pendingExtraSeat?String(pendingExtraSeat):'';
+        form.elements.extraSeatNumber.dispatchEvent(new Event('change'));
+      }
+      if(form.elements.extraSeatRequested)form.elements.extraSeatRequested.checked=Boolean(pendingExtraSeat);
+      const seat=state.trip.seats.find(item=>item.number===pendingSeat);
+      const label=form.querySelector('.seat-picker-launcher strong');
+      const note=form.querySelector('.seat-picker-launcher small');
+      if(label)label.textContent=`Sæde ${pendingSeat}${pendingExtraSeat?` + ${pendingExtraSeat}`:''} valgt`;
+      if(note)note.textContent=`${isDouble?(seat.deck==='upper'?'Overdæk':'Nederdæk'):'Standard sæde'}${seat.surcharge?` · +${seat.surcharge} kr.`:''}${pendingExtraSeat?' · ekstrasæde valgt':''}`;
+      close();
+    };
+  };
+  draw();
+  dialog.showModal();
+}
+openPictureSeatPicker=function(form){openSeatPickerWithAutomaticExtra(form,true)};
+openStandardSeatPicker=function(form){openSeatPickerWithAutomaticExtra(form,false)};
 const passengerFormBeforeExtraSeat=passengerForm;
 passengerForm=function(){let html=passengerFormBeforeExtraSeat();if(!['admin','sales_manager','driver'].includes(state.user?.role))return html;html=html.replace('<button class="primary wide">Opret passager</button>',`${extraSeatFields()}<button class="primary wide">Opret passager</button>`);return html.replace('Kontant beløb<input name="cashAmount"','Billetbeløb (uden ekstra sæde)<input name="cashAmount"')};
 const wirePassengerFormBeforeExtraSeat=wirePassengerForm;
 wirePassengerForm=function(){wirePassengerFormBeforeExtraSeat();const form=$('#passengerForm');if(!form||!form.elements.extraSeatNumber)return;wireExtraSeatFields(form);const submit=form.onsubmit;form.onsubmit=async event=>{const before=state.trip.passengers.length;await submit(event);if(state.trip?.passengers?.length>before){try{state.trip=await api(`/api/trips/${state.trip.trip.id}`);renderTrip()}catch(error){toast(error.message)}}}};
+
+const passengerFormBeforeRequestedExtra=passengerForm;
+passengerForm=function(){
+  const html=passengerFormBeforeRequestedExtra();
+  if(!['admin','sales_manager','driver'].includes(state.user?.role))return html;
+  return html.replace('<div class="wide"><strong>Vælg sæde</strong>',`${extraSeatRequestField()}<div class="wide"><strong>Vælg sæde</strong>`);
+};
+const wirePassengerFormBeforeRequestedExtra=wirePassengerForm;
+wirePassengerForm=function(){
+  wirePassengerFormBeforeRequestedExtra();
+  const form=$('#passengerForm'),request=form?.elements.extraSeatRequested;
+  if(!form||!request)return;
+  request.onchange=()=>{
+    if(request.checked)return;
+    if(form.elements.extraSeatNumber.value){
+      form.elements.extraSeatNumber.value='';
+      form.elements.extraSeatNumber.dispatchEvent(new Event('change'));
+    }
+  };
+};
 
 const showPassengerCorrectionBeforeExtraSeat=showPassengerCorrection;
 showPassengerCorrection=function(id){showPassengerCorrectionBeforeExtraSeat(id);const passenger=state.trip.passengers.find(item=>item.id===id),form=$('#passengerCorrectionForm');if(!passenger||!form)return;form.dataset.passengerId=String(passenger.id);const cashInput=form.elements.cashAmount;if(cashInput){cashInput.value=String(passenger.ticketCashAmount??Math.max(0,Number(passenger.cashAmount||0)-Number(passenger.extraSeatAmount||0)));const label=cashInput.closest('label');if(label)label.childNodes[0].nodeValue='Billetbeløb (uden ekstra sæde)'}if(passenger.extraSeatNumber&&['admin','sales_manager','driver'].includes(state.user?.role)){form.querySelector('.correction-reason')?.insertAdjacentHTML('beforebegin',extraSeatFields(passenger));wireExtraSeatFields(form)}};
@@ -1133,6 +1203,8 @@ const showPassengerActionSheetBeforeExtraSeat=showPassengerActionSheet;
 showPassengerActionSheet=function(id){showPassengerActionSheetBeforeExtraSeat(id);const passenger=state.trip.passengers.find(item=>item.id===id);if(!passenger?.extraSeatNumber)return;const seat=[...$$('.passenger-action-sheet header span')].find(item=>item.textContent.trim().startsWith('Sæde'));if(seat?.querySelector('b'))seat.querySelector('b').textContent=`${passenger.seatNumber} + ${passenger.extraSeatNumber}`};
 
 [
+  ['Bestil et ekstra sæde ved siden af','Rezervo një ulëse shtesë pranë','Einen zusätzlichen Sitz daneben buchen','Book an additional adjacent seat'],
+  ['Markér her først. Når hovedsædet vælges på sædeplanen, vælger systemet automatisk det ledige nabosæde.','Shënojeni fillimisht këtu. Kur zgjidhet ulësja kryesore në plan, sistemi zgjedh automatikisht ulësen e lirë pranë saj.','Zuerst hier markieren. Bei Auswahl des Hauptsitzes wählt das System automatisch den freien Nachbarsitz.','Select this first. When the main seat is chosen on the seat map, the system automatically selects the available adjacent seat.'],
   ['Ekstra siddeplads ved siden af','Ulëse shtesë pranë pasagjerit','Zusätzlicher Nachbarsitz','Additional adjacent seat'],
   ['Vælg hovedsædet først. Kun det ledige sæde direkte ved siden af kan bestilles sammen med billetten.','Zgjidhni fillimisht ulësen kryesore. Vetëm ulësja e lirë drejtpërdrejt pranë saj mund të rezervohet me biletën.','Wählen Sie zuerst den Hauptsitz. Nur der freie Sitz direkt daneben kann zusammen mit dem Ticket gebucht werden.','Choose the main seat first. Only the available seat directly beside it can be booked with the ticket.'],
   ['Ekstra sæde','Ulëse shtesë','Zusätzlicher Sitz','Additional seat'],
