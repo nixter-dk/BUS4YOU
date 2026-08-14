@@ -65,7 +65,7 @@ Når databasen allerede indeholder data, ændrer `INITIAL_ADMIN_PASSWORD` ikke d
 - Kontrol af afsenderadresse på alle ændrende API-kald.
 - Begrænsning af gentagne loginforsøg.
 - Sikkerhedsoverskrifter, CSP og HSTS.
-- Maksimal filstørrelse og tilladte filtyper for billeder og kvitteringer.
+- Tilladte filtyper kontrolleres. Kvitteringer har en grænse på 5 MB; bagagefotos har ingen særskilt filgrænse, men hele API-anmodningen har en sikkerhedsgrænse på 128 MB.
 - Kontrolleret nedlukning, som venter på igangværende datalagring.
 
 ## Opdatering

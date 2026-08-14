@@ -41,7 +41,7 @@ function seed() {
     { id: 3, name: 'Sara Chauffør', email: 'sara@albaturist.dk', role: 'driver', salt: driver2.salt, passwordHash: driver2.hash }
   );
   return {
-    meta: { version: 17, nextId: 20 },
+    meta: { version: 18, nextId: 20 },
     settings: { logoFile: null, logoType: null, logoName: null },
     users,
     stops: [], buses: [],
@@ -179,6 +179,16 @@ function storeImage(data,{prefix,maxBytes=10*1024*1024}={}) {
 function removeStoredFile(file){if(!file)return;const target=path.join(UPLOAD_DIR,path.basename(file));if(fs.existsSync(target))fs.unlinkSync(target)}
 function storedImage(res,file,type){const target=path.join(UPLOAD_DIR,path.basename(file||''));if(!file||!fs.existsSync(target))return fail(res,404,'Billedet findes ikke');res.writeHead(200,{'Content-Type':type||'application/octet-stream','Cache-Control':'private, max-age=300','X-Content-Type-Options':'nosniff'});fs.createReadStream(target).pipe(res)}
 function userName(userId) { return userId ? db.users.find(user => user.id === userId)?.name || 'Ukendt medarbejder' : null; }
+function userHasOperationalHistory(userId) {
+  return db.trips.some(trip=>[trip.primaryDriverId,trip.secondaryDriverId,trip.salesManagerId,trip.cancelledBy,trip.closedBy,trip.reopenedBy].includes(userId))
+    || db.passengers.some(passenger=>[passenger.createdBy,passenger.checkedInBy,passenger.paymentRecordedBy,passenger.cashHolderUserId].includes(userId)||(passenger.attendanceHistory||[]).some(event=>[event.userId,event.receivedBy].includes(userId))||(passenger.editHistory||[]).some(event=>event.editedBy===userId))
+    || db.baggage.some(item=>[item.createdBy,item.paymentRecordedBy,item.cashHolderUserId,item.statusUpdatedBy].includes(userId)||(item.baggageHistory||[]).some(event=>event.userId===userId)||(item.editHistory||[]).some(event=>event.editedBy===userId))
+    || db.expenses.some(expense=>[expense.createdBy,expense.paidByUserId,expense.cashBoxUserId,expense.reviewedBy,expense.reimbursedBy,expense.forwardedToSalesManagerId,expense.forwardedBy].includes(userId)||(expense.editHistory||[]).some(event=>event.editedBy===userId))
+    || db.cashSettlements.some(settlement=>[settlement.driverId,settlement.submittedBy,settlement.reviewedBy].includes(userId))
+    || db.cashTransfers.some(transfer=>[transfer.fromUserId||transfer.fromDriverId,transfer.toUserId||transfer.toDriverId,transfer.initiatedBy,transfer.respondedBy].includes(userId))
+    || (db.cashBudgetEntries||[]).some(entry=>[entry.cashHolderUserId,entry.createdBy].includes(userId))
+    || db.auditLog.some(event=>event.userId===userId);
+}
 function isFixedStartPoint(stop) { return ['københavn', 'tetovo'].includes(String(stop?.name || '').trim().toLocaleLowerCase('da-DK')); }
 function editHistoryView(history) { return (history || []).map(event => ({ ...event, editedByName:userName(event.editedBy) })); }
 function passengerRecordView(passenger) { return { ...passenger, availableCashAmount:cashAvailableAmount({kind:'passenger',record:passenger}), checkedInByName:userName(passenger.checkedInBy), paymentRecordedByName:userName(passenger.paymentRecordedBy), cashHolderUserName:userName(passenger.cashHolderUserId), attendanceHistory:(passenger.attendanceHistory||[]).map(event=>({...event,userName:userName(event.userId),receivedByName:userName(event.receivedBy)})), editHistory:editHistoryView(passenger.editHistory) }; }
@@ -248,16 +258,16 @@ async function body(req) {
   let raw = '', receivedBytes = 0;
   for await (const chunk of req) {
     receivedBytes += chunk.length;
-    if (receivedBytes > MAX_JSON_BODY_BYTES) throw new Error('For meget data');
+    if (receivedBytes > MAX_JSON_BODY_BYTES) throw Object.assign(new Error('For meget data'),{statusCode:413});
     raw += chunk;
   }
-  try { return raw ? JSON.parse(raw) : {}; } catch (_) { throw new Error('Ugyldig JSON'); }
+  try { return raw ? JSON.parse(raw) : {}; } catch (_) { throw Object.assign(new Error('Ugyldig JSON'),{statusCode:400}); }
 }
 function tripView(t) {
   const passengers = db.passengers.filter(p => p.tripId === t.id);
   const baggage = db.baggage.filter(b => b.tripId === t.id);
   const expenses = db.expenses.filter(expense=>expense.tripId===t.id);
-  const unsettledCash = [...passengers,...baggage].filter(record=>record.paymentStatus==='cash'&&['bus','departure'].includes(record.paymentLocation)&&record.cashHolderUserId&&!record.cashHandedOverAt);
+  const unsettledCash = allCashItems().filter(item=>item.record.tripId===t.id&&item.record.paymentStatus==='cash'&&['bus','departure','budget'].includes(item.record.paymentLocation)&&item.record.cashHolderUserId&&!item.record.cashHandedOverAt);
   return { ...t,
     origin: db.stops.find(s => s.id === t.originId), destination: db.stops.find(s => s.id === t.destinationId),
     bus: db.buses.find(b => b.id === t.busId) || null,
@@ -357,9 +367,10 @@ function recordDeletion(trip, kind, record, user, reason) {
   trip.deletionHistory = trip.deletionHistory || [];
   trip.deletionHistory.push({ kind, record: { ...record }, deletedAt: new Date().toISOString(), deletedBy: user.id, deletedByName: user.name, reason });
 }
+function cashItemBelongsToTrip(item,tripId) { return Boolean(item&&(item.record.tripId===tripId||(item.kind==='budget'&&!item.record.tripId))); }
 function cashRecordByReference(reference, tripId) {
   const item=cashRecordByReferenceAny(reference);
-  return item&&item.record.tripId===tripId?item:null;
+  return cashItemBelongsToTrip(item,tripId)?item:null;
 }
 function cashRecordByReferenceAny(reference) {
   const [kind,rawId] = String(reference).split(':');
@@ -418,10 +429,9 @@ async function api(req, res, pathname) {
   }
   if(pathname==='/api/dashboard'&&req.method==='GET'){
     const visibleTrips=db.trips.filter(trip=>allowedTrip(user,trip)),tripIds=new Set(visibleTrips.map(trip=>trip.id)),passengers=db.passengers.filter(record=>tripIds.has(record.tripId)),baggage=db.baggage.filter(record=>tripIds.has(record.tripId)),expenses=db.expenses.filter(record=>tripIds.has(record.tripId));
-    const heldAll=[...passengers,...baggage].filter(record=>record.paymentStatus==='cash'&&['bus','departure'].includes(record.paymentLocation)&&record.cashHolderUserId&&!record.cashHandedOverAt),held=user.role==='admin'?heldAll:heldAll.filter(record=>record.cashHolderUserId===user.id),holderIds=[...new Set(heldAll.map(record=>record.cashHolderUserId))];
+    const heldAllItems=allCashItems().filter(item=>(tripIds.has(item.record.tripId)||(item.kind==='budget'&&!item.record.tripId))&&item.record.paymentStatus==='cash'&&['bus','departure','budget'].includes(item.record.paymentLocation)&&item.record.cashHolderUserId&&!item.record.cashHandedOverAt),heldItems=user.role==='admin'?heldAllItems:heldAllItems.filter(item=>item.record.cashHolderUserId===user.id),holderIds=[...new Set(heldAllItems.map(item=>item.record.cashHolderUserId))];
     const isToday=value=>value&&new Date(value).toDateString()===new Date().toDateString(),receivedFilter=record=>record.paymentStatus==='cash'&&isToday(record.paymentRecordedAt)&&(user.role==='admin'||record.cashHolderUserId===user.id||record.paymentRecordedBy===user.id),todayTickets=passengers.filter(receivedFilter),todayBaggage=baggage.filter(receivedFilter);
-    const heldItems=held.map(record=>({kind:db.passengers.includes(record)?'passenger':'baggage',record}));
-    return json(res,200,{cashHeld:{...cashAvailableAmounts(heldItems),gross:cashAmounts(heldItems),expenses:cashExpenseTotalsForItems(heldItems),payments:held.length,byPerson:user.role==='admin'?holderIds.map(userId=>{const records=heldAll.filter(record=>record.cashHolderUserId===userId),items=records.map(record=>({kind:db.passengers.includes(record)?'passenger':'baggage',record}));return{userId,userName:userName(userId),...cashAvailableAmounts(items),gross:cashAmounts(items),expenses:cashExpenseTotalsForItems(items),payments:records.length}}):[]},todayTicketRevenue:cashAmounts(todayTickets),todayBaggageRevenue:cashAmounts(todayBaggage),todayTicketSales:todayTickets.length,todayBaggageSales:todayBaggage.length,pendingExpenses:expenses.filter(expense=>(expense.status||'pending')==='pending'&&(user.role==='admin'||expense.createdBy===user.id)).length,missingReceipts:expenses.filter(expense=>!expense.receiptFile&&(user.role==='admin'||expense.createdBy===user.id)).length,openBaggage:baggage.filter(item=>!['delivered'].includes(item.status)).length,unpaid:[...passengers,...baggage].filter(isPendingPayment).length});
+    return json(res,200,{cashHeld:{...cashAvailableAmounts(heldItems),gross:cashAmounts(heldItems),expenses:cashExpenseTotalsForItems(heldItems),payments:heldItems.length,byPerson:user.role==='admin'?holderIds.map(userId=>{const items=heldAllItems.filter(item=>item.record.cashHolderUserId===userId);return{userId,userName:userName(userId),...cashAvailableAmounts(items),gross:cashAmounts(items),expenses:cashExpenseTotalsForItems(items),payments:items.length}}):[]},todayTicketRevenue:cashAmounts(todayTickets),todayBaggageRevenue:cashAmounts(todayBaggage),todayTicketSales:todayTickets.length,todayBaggageSales:todayBaggage.length,pendingExpenses:expenses.filter(expense=>(expense.status||'pending')==='pending'&&(user.role==='admin'||expense.createdBy===user.id)).length,missingReceipts:expenses.filter(expense=>!expense.receiptFile&&(user.role==='admin'||expense.createdBy===user.id)).length,openBaggage:baggage.filter(item=>!['delivered'].includes(item.status)).length,unpaid:[...passengers,...baggage].filter(isPendingPayment).length});
   }
   if(pathname==='/api/my-cashbox'&&req.method==='GET'){
     if(!['sales_manager','driver'].includes(user.role))return fail(res,403,'Kun salgschefer og chauffører har adgang til deres personlige pengekasse');
@@ -498,7 +508,7 @@ async function api(req, res, pathname) {
       if (type === 'standard' && (!Number.isInteger(seatCount) || seatCount < 1 || seatCount > 54)) return fail(res, 400, 'En almindelig bus kan have op til 54 sæder');
       if (db.buses.some(b => b.id !== bus.id && b.registration === registration)) return fail(res, 409, 'Registreringsnummeret findes allerede');
       const lowerDeckSeats = type === 'double' ? 22 : seatCount;
-      const highestBooked = Math.max(0,...db.trips.filter(t => t.busId === bus.id).flatMap(t => db.passengers.filter(p => p.tripId === t.id).map(p => p.seatNumber)));
+      const highestBooked = Math.max(0,...db.trips.filter(t => t.busId === bus.id).flatMap(t => db.passengers.filter(p => p.tripId === t.id).flatMap(p => [p.seatNumber,p.extraSeatNumber||0])));
       if (seatCount < highestBooked) return fail(res, 409, `Der er allerede booket sæde ${highestBooked} på denne bus`);
       Object.assign(bus,{ name,registration,type,seatCount,lowerDeckSeats }); db.trips.filter(t => t.busId === bus.id).forEach(t => t.seatCount = seatCount); await saveDb(); return json(res, 200, bus);
     }
@@ -516,8 +526,8 @@ async function api(req, res, pathname) {
     const sumExpensesByCurrency = records => ['DKK','EUR'].reduce((result,currency) => { result[currency]=records.filter(record=>record.currency===currency).reduce((sum,record)=>sum+Number(record.amount||0),0); return result; },{});
     const addTrip = record => { const trip = db.trips.find(t => t.id === record.tripId); return { ...record, tripTitle: trip?.title || 'Ukendt tur', departureAt: trip?.departureAt || null, createdByName: userName(record.createdBy), paidByName:userName(record.paidByUserId||record.createdBy), checkedInByName:userName(record.checkedInBy), paymentRecordedByName:userName(record.paymentRecordedBy), cashHolderUserName:userName(record.cashHolderUserId), statusUpdatedByName:userName(record.statusUpdatedBy), reviewedByName:userName(record.reviewedBy), reimbursedByName:userName(record.reimbursedBy) }; };
     const cashByDriver = db.users.filter(u => ['driver','sales_manager'].includes(u.role)).map(driver => {
-      const held = [...db.passengers,...db.baggage].filter(record => record.paymentStatus === 'cash' && ['bus','departure'].includes(record.paymentLocation) && record.cashHolderUserId === driver.id && !record.cashHandedOverAt);
-      const items=held.map(record=>({kind:db.passengers.includes(record)?'passenger':'baggage',record}));return { driverId: driver.id, driverName: driver.name, amounts: cashAvailableAmounts(items), grossAmounts:sumByCurrency(held),expenseAmounts:cashExpenseTotalsForItems(items),payments: held.length };
+      const items=allCashItems().filter(item=>item.record.paymentStatus==='cash'&&['bus','departure','budget'].includes(item.record.paymentLocation)&&item.record.cashHolderUserId===driver.id&&!item.record.cashHandedOverAt),budgetItems=items.filter(item=>item.kind==='budget');
+      return { driverId: driver.id, driverName: driver.name, amounts: cashAvailableAmounts(items), grossAmounts:cashAmounts(items),expenseAmounts:cashExpenseTotalsForItems(items),budgetAmounts:cashAvailableAmounts(budgetItems),payments:items.length };
     }).filter(row => row.payments > 0);
     const approvedSettlements = db.cashSettlements.filter(settlement=>settlement.status==='approved');
     const cashAtOffice = ['DKK','EUR'].reduce((totals,currency)=>{totals[currency]=approvedSettlements.reduce((sum,settlement)=>sum+Number(settlement.delivered?.[currency]||0),0);return totals;},{});
@@ -601,6 +611,7 @@ async function api(req, res, pathname) {
     if (req.method === 'DELETE') {
       const assigned = db.trips.some(t => t.primaryDriverId === driver.id || t.secondaryDriverId === driver.id);
       if (assigned) return fail(res, 409, 'Chaufføren er tildelt en tur og kan derfor ikke slettes');
+      if(userHasOperationalHistory(driver.id))return fail(res,409,'Chaufføren har registreret historik, betalinger eller udgifter og kan derfor ikke slettes');
       removeStoredFile(driver.portraitFile);db.users = db.users.filter(u => u.id !== driver.id); await saveDb(); return json(res, 200, { ok: true });
     }
     return fail(res, 405, 'Handlingen er ikke tilladt');
@@ -615,7 +626,7 @@ async function api(req, res, pathname) {
       stop.name = data.name.trim(); stop.address = String(data.address || '').trim(); await saveDb(); return json(res, 200, stop);
     }
     if (req.method === 'DELETE') {
-      const inUse = db.trips.some(t => t.originId === stop.id || t.destinationId === stop.id) || db.passengers.some(p => p.pickupStopId === stop.id || p.destinationStopId === stop.id) || db.baggage.some(b => b.pickupStopId === stop.id || b.destinationStopId === stop.id);
+      const inUse = db.trips.some(t => t.originId === stop.id || t.destinationId === stop.id || (t.timetable||[]).some(row=>row.stopId===stop.id)) || db.passengers.some(p => p.pickupStopId === stop.id || p.destinationStopId === stop.id) || db.baggage.some(b => b.pickupStopId === stop.id || b.destinationStopId === stop.id);
       if (inUse) return fail(res, 409, 'Stedet bruges allerede og kan derfor ikke slettes');
       db.stops = db.stops.filter(s => s.id !== stop.id); await saveDb(); return json(res, 200, { ok: true });
     }
@@ -626,11 +637,14 @@ async function api(req, res, pathname) {
     const data = await body(req); if (!data.title || !data.departureAt || !data.originId || !data.destinationId || !data.primaryDriverId || !data.busId) return fail(res, 400, 'Udfyld turens obligatoriske felter');
     const origin = db.stops.find(stop => stop.id === Number(data.originId));
     if (!isFixedStartPoint(origin)) return fail(res, 400, 'Turens startpunkt skal være København eller Tetovo');
+    if(!db.stops.some(stop=>stop.id===Number(data.destinationId)))return fail(res,400,'Vælg et gyldigt slutsted');
     if (Number(data.primaryDriverId) === Number(data.secondaryDriverId)) return fail(res, 400, 'De to chauffører skal være forskellige');
+    const primaryDriver=db.users.find(candidate=>candidate.id===Number(data.primaryDriverId)&&candidate.role==='driver'),secondaryDriver=data.secondaryDriverId?db.users.find(candidate=>candidate.id===Number(data.secondaryDriverId)&&candidate.role==='driver'):null;
+    if(!primaryDriver||(data.secondaryDriverId&&!secondaryDriver))return fail(res,400,'Vælg gyldige chauffører fra chaufførregisteret');
     const bus = db.buses.find(b => b.id === Number(data.busId)); if (!bus) return fail(res, 400, 'Vælg en gyldig bus');
     const salesManagerId=data.salesManagerId?Number(data.salesManagerId):null;if(salesManagerId&&!db.users.some(candidate=>candidate.id===salesManagerId&&candidate.role==='sales_manager'))return fail(res,400,'Vælg en gyldig salgschef');
     const durationMinutes=Math.max(30,Math.min(1440,Number(data.durationMinutes)||480));
-    const departureAt = new Date(data.departureAt);
+    const departureAt = new Date(data.departureAt);if(Number.isNaN(departureAt.getTime()))return fail(res,400,'Vælg en gyldig afgangstid');
     const destinationAt = new Date(departureAt.getTime() + durationMinutes * 60000);
     const timetable = [{ stopId: Number(data.originId), arrivalAt: departureAt.toISOString(), departureAt: departureAt.toISOString() }];
     if (Number(data.destinationId) !== Number(data.originId)) timetable.push({ stopId: Number(data.destinationId), arrivalAt: destinationAt.toISOString(), departureAt: destinationAt.toISOString() });
@@ -653,17 +667,17 @@ async function api(req, res, pathname) {
       if(!expenseTrip||!allowedTrip(user,expenseTrip)||(expense.expenseScope==='sales_preparation'&&user.role!=='admin'&&expense.createdBy!==user.id)||(user.role==='sales_manager'&&expense.createdBy!==user.id))return fail(res,403,'Du har ikke adgang til at rette udgiften');
       if(expense.reimbursementStatus==='paid')return fail(res,409,'En tilbagebetalt udgift kan ikke ændres');
       const reason=correctionReason(data);if(!reason)return fail(res,400,'Skriv kort, hvorfor udgiften rettes');
-      const salesCashExpense=expense.expenseScope==='sales_preparation'||user.role==='sales_manager',amount=Number(data.amount),currency=['DKK','EUR'].includes(data.currency)?data.currency:null,category=String(data.category||'').trim(),paymentMethod=salesCashExpense?'cash':['company_card','cash','private'].includes(data.paymentMethod)?data.paymentMethod:null;
+      const forcedSalesCash=expense.expenseScope==='sales_preparation'||user.role==='sales_manager',amount=Number(data.amount),currency=['DKK','EUR'].includes(data.currency)?data.currency:null,category=String(data.category||'').trim(),paymentMethod=forcedSalesCash?'cash':['company_card','cash','private'].includes(data.paymentMethod)?data.paymentMethod:null;
       if(!(amount>0)||!currency||!category||!paymentMethod)return fail(res,400,'Angiv kategori, beløb, valuta og betalingsmetode');
       const allowedPayers=[expenseTrip.primaryDriverId,expenseTrip.secondaryDriverId,expense.createdBy,user.id].filter(Boolean),paidByUserId=Number(data.paidByUserId||expense.paidByUserId);
       if(!allowedPayers.includes(paidByUserId)&&user.role!=='admin')return fail(res,400,'Vælg en medarbejder med ansvar på turen');
-      const updates={category,description:String(data.description||'').trim(),amount,currency,paymentMethod,paidByUserId};
-      if(salesCashExpense){
-        const cashBoxUserId=expense.cashBoxUserId||expense.createdBy||user.id,locked=(expense.cashPaymentAllocations||[]).some(allocation=>{const item=cashRecordByReference(allocation.reference,expense.tripId);return !item||item.record.cashHolderUserId!==cashBoxUserId||item.record.cashHandedOverAt||hasPendingSettlementReference(allocation.reference)||hasPendingTransferReference(allocation.reference)});
-        if(locked)return fail(res,409,'Udgiften er låst, fordi de tilknyttede kontanter er overført eller afstemt');
-        const allocations=allocateCashExpense(expense.tripId,cashBoxUserId,currency,amount,expense.id);if(!allocations)return fail(res,409,'Der er ikke nok disponible kontanter i salgschefens kasse til det rettede beløb');
-        Object.assign(updates,{paidByUserId:cashBoxUserId,cashBoxUserId,cashPaymentAllocations:allocations,expenseScope:'sales_preparation'});
-      }
+      const paidByUser=db.users.find(candidate=>candidate.id===paidByUserId);if(!paidByUser)return fail(res,400,'Vælg en gyldig betaler');
+      const existingCashBoxUserId=expense.cashBoxUserId,locked=(expense.cashPaymentAllocations||[]).some(allocation=>{const item=cashRecordByReference(allocation.reference,expense.tripId);return !item||item.record.cashHolderUserId!==existingCashBoxUserId||item.record.cashHandedOverAt||hasPendingSettlementReference(allocation.reference)||hasPendingTransferReference(allocation.reference)});
+      if(locked)return fail(res,409,'Udgiften er låst, fordi de tilknyttede kontanter er overført eller afstemt');
+      const cashBoxUserId=paymentMethod==='cash'&&['driver','sales_manager'].includes(paidByUser.role)?paidByUserId:null,cashPaymentAllocations=cashBoxUserId?allocateCashExpense(expense.tripId,cashBoxUserId,currency,amount,expense.id):[];
+      if(cashBoxUserId&&!cashPaymentAllocations)return fail(res,409,'Der er ikke nok disponible kontanter i medarbejderens kasse til det rettede beløb');
+      const updates={category,description:String(data.description||'').trim(),amount,currency,paymentMethod,paidByUserId,cashBoxUserId,cashPaymentAllocations};
+      if(expense.expenseScope==='sales_preparation')updates.expenseScope='sales_preparation';
       const changes=changedFields(expense,updates);if(!Object.keys(changes).length)return fail(res,400,'Der er ingen ændringer at gemme');
       Object.assign(expense,updates);expense.editHistory=expense.editHistory||[];expense.editHistory.push({editedAt:new Date().toISOString(),editedBy:user.id,reason,changes});
       if(expense.status!=='pending'){expense.status='pending';expense.reviewedAt=null;expense.reviewedBy=null;expense.reviewNote='Genåbnet efter rettelse';}
@@ -746,10 +760,10 @@ async function api(req, res, pathname) {
       if (!Array.isArray(data.timetable) || data.timetable.length < 1) return fail(res,400,'Tidsplanen skal indeholde mindst ét stoppested');
       const timetable = [], stopIds = new Set();
       for (const row of data.timetable) {
-        const stopId = Number(row.stopId), arrival = new Date(row.arrivalAt), departure = new Date(row.departureAt);
+        const stopId = Number(row.stopId), departure = new Date(row.departureAt), arrival = new Date(stopId===trip.originId?row.departureAt:row.arrivalAt);
         if (!db.stops.some(stop => stop.id === stopId)) return fail(res,400,'Tidsplanen indeholder et ukendt opsamlingssted');
         if (stopIds.has(stopId)) return fail(res,400,'Et opsamlingssted må kun stå én gang i tidsplanen');
-        if (Number.isNaN(arrival.getTime()) || Number.isNaN(departure.getTime())) return fail(res,400,'Angiv både ankomst og afgang ved alle stoppesteder');
+        if (Number.isNaN(arrival.getTime()) || Number.isNaN(departure.getTime())) return fail(res,400,stopId===trip.originId?'Angiv afgang ved startstedet':'Angiv både ankomst og afgang ved alle stoppesteder');
         if (arrival > departure) return fail(res,400,'Afgang kan ikke ligge før ankomst');
         stopIds.add(stopId); timetable.push({ stopId, arrivalAt: arrival.toISOString(), departureAt: departure.toISOString() });
       }
@@ -809,6 +823,7 @@ async function api(req, res, pathname) {
     if (!['admin','sales_manager','driver'].includes(user.role)) return fail(res, 403, 'Du har ikke adgang til at oprette passagerer');
     const data = await body(req); const seat = seatMap(trip.id).find(s => s.number === Number(data.seatNumber));
     if (!data.name?.trim() || !data.phone?.trim() || !data.pickupStopId || !data.destinationStopId || !seat) return fail(res, 400, 'Udfyld passagerens obligatoriske felter');
+    if(!db.stops.some(stop=>stop.id===Number(data.pickupStopId))||!db.stops.some(stop=>stop.id===Number(data.destinationStopId)))return fail(res,400,'Vælg gyldige opsamlings- og destinationssteder');
     if(user.role==='driver'&&data.paymentStatus!=='cash')return fail(res,403,'Chaufføren kan kun oprette billetter, der betales i bussen');
     if (seat.passengerId) return fail(res, 409, 'Sædet er allerede reserveret');
     if (!['unpaid','cash','free','pay_dk','pay_mk'].includes(data.paymentStatus)) return fail(res, 400, 'Ugyldig betalingsstatus');
@@ -896,7 +911,8 @@ async function api(req, res, pathname) {
   }
   if (part === 'baggage' && req.method === 'POST') {
     if (!['admin','sales_manager','driver'].includes(user.role)) return fail(res, 403, 'Du har ikke adgang til at registrere bagage');
-    const data = await body(req); if (!data.senderName?.trim() || !data.recipientName?.trim() || !data.phone?.trim() || !data.pickupStopId || !data.destinationStopId || !data.pieces) return fail(res, 400, 'Udfyld afsender, modtager og bagagens øvrige obligatoriske felter');
+    const data = await body(req),pieces=Number(data.pieces); if (!data.senderName?.trim() || !data.recipientName?.trim() || !data.phone?.trim() || !data.pickupStopId || !data.destinationStopId || !Number.isInteger(pieces)||pieces<1) return fail(res, 400, 'Udfyld afsender, modtager og bagagens øvrige obligatoriske felter');
+    if(!db.stops.some(stop=>stop.id===Number(data.pickupStopId))||!db.stops.some(stop=>stop.id===Number(data.destinationStopId)))return fail(res,400,'Vælg gyldige opsamlings- og destinationssteder');
     if(user.role==='sales_manager'&&Number(data.pickupStopId)!==trip.originId)return fail(res,403,'Salgschefen kan kun modtage bagage ved turens startsted');
     if(user.role==='driver'&&data.paymentStatus!=='cash')return fail(res,403,'Chaufføren kan kun modtage bagage, der betales i bussen');
     if(!['unpaid','cash','pay_dk','pay_mk'].includes(data.paymentStatus))return fail(res,400,'Ugyldig betalingsstatus');
@@ -907,7 +923,7 @@ async function api(req, res, pathname) {
     const photoExtensions={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp'},photoFile=`baggage-${crypto.randomBytes(18).toString('hex')}${photoExtensions[photoType]}`;fs.mkdirSync(UPLOAD_DIR,{recursive:true});fs.writeFileSync(path.join(UPLOAD_DIR,photoFile),photoData);
     const paymentCurrency = ['DKK','EUR'].includes(data.paymentCurrency) ? data.paymentCurrency : 'DKK';
     const createdAt=new Date().toISOString();
-    const item = { id: id(), tripId: trip.id, senderName: data.senderName.trim(), recipientName: data.recipientName.trim(), phone: data.phone.trim(), pickupStopId: Number(data.pickupStopId), destinationStopId: Number(data.destinationStopId), pieces: Number(data.pieces), description: String(data.description || '').trim(), photoName, photoType, photoFile, paymentStatus: data.paymentStatus, paymentCurrency, cashAmount: data.paymentStatus === 'cash' ? Number(data.cashAmount || 0) : 0, paymentLocation: data.paymentStatus === 'cash' ? (user.role==='sales_manager'?'departure':user.role==='driver'?'bus':'shop') : null, paymentRecordedAt: data.paymentStatus === 'cash' ? createdAt : null, paymentRecordedBy: data.paymentStatus === 'cash' ? user.id : null, cashHolderUserId: data.paymentStatus === 'cash'&&['sales_manager','driver'].includes(user.role)?user.id:null, notes: String(data.notes || '').trim(), status: 'registered', createdAt, createdBy:user.id, statusUpdatedAt:createdAt, statusUpdatedBy:user.id, baggageHistory:[{action:'registered',at:createdAt,userId:user.id}] };
+    const item = { id: id(), tripId: trip.id, senderName: data.senderName.trim(), recipientName: data.recipientName.trim(), phone: data.phone.trim(), pickupStopId: Number(data.pickupStopId), destinationStopId: Number(data.destinationStopId), pieces, description: String(data.description || '').trim(), photoName, photoType, photoFile, paymentStatus: data.paymentStatus, paymentCurrency, cashAmount: data.paymentStatus === 'cash' ? Number(data.cashAmount || 0) : 0, paymentLocation: data.paymentStatus === 'cash' ? (user.role==='sales_manager'?'departure':user.role==='driver'?'bus':'shop') : null, paymentRecordedAt: data.paymentStatus === 'cash' ? createdAt : null, paymentRecordedBy: data.paymentStatus === 'cash' ? user.id : null, cashHolderUserId: data.paymentStatus === 'cash'&&['sales_manager','driver'].includes(user.role)?user.id:null, notes: String(data.notes || '').trim(), status: 'registered', createdAt, createdBy:user.id, statusUpdatedAt:createdAt, statusUpdatedBy:user.id, baggageHistory:[{action:'registered',at:createdAt,userId:user.id}] };
     db.baggage.push(item);audit(user,'baggage.created','baggage',item.id,trip.id,{senderName:item.senderName,recipientName:item.recipientName,paymentStatus:item.paymentStatus}); await saveDb(); return json(res, 201, baggageRecordView(item));
   }
   if (part === 'baggage' && req.method === 'DELETE') {
@@ -959,11 +975,11 @@ async function api(req, res, pathname) {
     if (!(amount > 0) || !currency || !category) return fail(res, 400, 'Angiv kategori, beløb og valuta');
     const paymentMethod=user.role==='sales_manager'?'cash':['company_card','cash','private'].includes(data.paymentMethod)?data.paymentMethod:'cash';
     const allowedPayers=[user.id,trip.primaryDriverId,trip.secondaryDriverId].filter(Boolean),paidByUserId=user.role==='admin'&&allowedPayers.includes(Number(data.paidByUserId))?Number(data.paidByUserId):user.id;
-    const cashPaymentAllocations=user.role==='sales_manager'?allocateCashExpense(trip.id,user.id,currency,amount):[];
-    if(user.role==='sales_manager'&&!cashPaymentAllocations)return fail(res,409,'Der er ikke nok disponible kontanter i din kasse til denne udgift');
+    const paidByUser=db.users.find(candidate=>candidate.id===paidByUserId),cashBoxUserId=paymentMethod==='cash'&&['driver','sales_manager'].includes(paidByUser?.role)?paidByUserId:null,cashPaymentAllocations=cashBoxUserId?allocateCashExpense(trip.id,cashBoxUserId,currency,amount):[];
+    if(cashBoxUserId&&!cashPaymentAllocations)return fail(res,409,'Der er ikke nok disponible kontanter i medarbejderens kasse til denne udgift');
     let receiptType=null,receiptName=null,receiptFile=null;
     if(data.receiptData){receiptType=String(data.receiptType||'');receiptName=path.basename(String(data.receiptName||'kvittering'));if(!['image/jpeg','image/png','image/webp','application/pdf'].includes(receiptType))return fail(res,400,'Kvitteringen skal være PDF, JPG, PNG eller WebP');const encoded=String(data.receiptData).replace(/^data:[^;]+;base64,/,'');const fileData=Buffer.from(encoded,'base64');if(!fileData.length||fileData.length>5*1024*1024)return fail(res,400,'Kvitteringen skal være mellem 1 byte og 5 MB');const extensions={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','application/pdf':'.pdf'};receiptFile=`${crypto.randomBytes(18).toString('hex')}${extensions[receiptType]}`;const uploadDir=UPLOAD_DIR;fs.mkdirSync(uploadDir,{recursive:true});fs.writeFileSync(path.join(uploadDir,receiptFile),fileData);}
-    const expense = { id:id(),tripId:trip.id,expenseDate:trip.departureAt,category,description:String(data.description||'').trim(),amount,currency,paymentMethod,paidByUserId,expenseScope:user.role==='sales_manager'?'sales_preparation':'trip_operation',cashBoxUserId:user.role==='sales_manager'?user.id:null,cashPaymentAllocations,receiptName,receiptType,receiptFile,createdAt:new Date().toISOString(),createdBy:user.id,status:'pending',reviewedAt:null,reviewedBy:null,reviewNote:'',reimbursementStatus:paymentMethod==='private'?'pending':'not_applicable',reimbursedAt:null,reimbursedBy:null };
+    const expense = { id:id(),tripId:trip.id,expenseDate:trip.departureAt,category,description:String(data.description||'').trim(),amount,currency,paymentMethod,paidByUserId,expenseScope:user.role==='sales_manager'?'sales_preparation':'trip_operation',cashBoxUserId,cashPaymentAllocations,receiptName,receiptType,receiptFile,createdAt:new Date().toISOString(),createdBy:user.id,status:'pending',reviewedAt:null,reviewedBy:null,reviewNote:'',reimbursementStatus:paymentMethod==='private'?'pending':'not_applicable',reimbursedAt:null,reimbursedBy:null };
     db.expenses.push(expense);audit(user,'expense.created','expense',expense.id,trip.id,{amount,currency,category,paymentMethod}); await saveDb(); return json(res,201,{...expense,createdByName:user.name,paidByName:userName(paidByUserId)});
   }
   if (part === 'transfers' && req.method === 'POST') {
@@ -995,7 +1011,7 @@ async function api(req, res, pathname) {
   }
   if (part === 'settlements' && req.method === 'POST') {
     const data = await body(req); const driverId = ['driver','sales_manager'].includes(user.role) ? user.id : Number(data.driverId);
-    const cashHolderIds=[...new Set([...db.passengers,...db.baggage].filter(record=>record.tripId===trip.id&&record.cashHolderUserId).map(record=>record.cashHolderUserId))];
+    const cashHolderIds=[...new Set(allCashItems().filter(item=>cashItemBelongsToTrip(item,trip.id)&&item.record.cashHolderUserId&&!item.record.cashHandedOverAt).map(item=>item.record.cashHolderUserId))];
     if (user.role!=='sales_manager'&&![trip.primaryDriverId,trip.secondaryDriverId,trip.salesManagerId,...cashHolderIds].includes(driverId)) return fail(res,400,'Vælg en medarbejder med ansvar på turen');
     if (db.cashSettlements.some(s=>s.tripId===trip.id&&s.driverId===driverId&&s.status==='pending')) return fail(res,409,'Medarbejderen har allerede en afstemning, der afventer godkendelse');
     const items = unsettledCashRecords(trip.id,driverId); if (!items.length) return fail(res,400,'Der er ingen uafstemte kontanter hos medarbejderen');
@@ -1012,7 +1028,7 @@ async function api(req, res, pathname) {
     if (settlement.status !== 'pending') return fail(res,409,'Afstemningen er allerede behandlet');
     if (!['approved','rejected'].includes(data.status)) return fail(res,400,'Vælg godkendt eller afvist');
     settlement.status=data.status;settlement.reviewedAt=new Date().toISOString();settlement.reviewedBy=user.id;settlement.reviewNote=String(data.reviewNote||'').trim();
-    if (data.status === 'approved') for (const ref of settlement.paymentRefs) { const [kind,recordId]=ref.split(':'); const collection=kind==='passenger'?db.passengers:db.baggage; const record=collection.find(item=>item.id===Number(recordId)); if(record&&!record.cashHandedOverAt){record.cashHandedOverAt=settlement.reviewedAt;record.cashSettlementId=settlement.id;} }
+    if (data.status === 'approved') for (const ref of settlement.paymentRefs) { const item=cashRecordByReferenceAny(ref); if(item&&!item.record.cashHandedOverAt){item.record.cashHandedOverAt=settlement.reviewedAt;item.record.cashSettlementId=settlement.id;} }
     audit(user,`cash_settlement.${data.status}`,'cash_settlement',settlement.id,trip.id,{driverId:settlement.driverId,difference:settlement.difference});await saveDb(); return json(res,200,{...settlement,driverName:db.users.find(u=>u.id===settlement.driverId)?.name||'Ukendt',submittedByName:db.users.find(u=>u.id===settlement.submittedBy)?.name||'Ukendt',reviewedByName:user.name});
   }
   return fail(res, 405, 'Handlingen er ikke tilladt');
@@ -1034,7 +1050,7 @@ const server = http.createServer(async (req, res) => {
     else if (!staticFile(res, pathname)) fail(res, 404, 'Ikke fundet');
   }
   catch (error) {
-    console.error(error);
+    if (!error.statusCode || error.statusCode >= 500) console.error(error);
     if (!res.headersSent) fail(res, error.statusCode|| (pathname === '/api/health' ? 503 : 500), pathname === '/api/health' ? 'Databasen er ikke klar' : error.statusCode?error.message:'Intern fejl');
     else res.destroy();
   }

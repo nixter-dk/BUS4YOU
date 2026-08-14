@@ -16,11 +16,12 @@ Den lokale MVP gemmer nedenstående relationelle struktur som JSON. ID-reference
 
 ### trips
 
-- `id`, `title`, `departureAt`, `durationMinutes`, `status`
+- `id`, `title`, `departureAt`, `status`
 - `cancellationReason`, `cancelledAt`, `cancelledBy` ved annullering
 - `originId`, `destinationId`, `busId`
-- `basePrice`, `seatCount` (1–84, kun administratoren kan ændre værdien)
+- `seatCount` (1–84, kun administratoren kan ændre værdien)
 - `primaryDriverId`, `secondaryDriverId`, `salesManagerId`
+- `timetable`: stoppesteder med ankomst og afgang i `Europe/Copenhagen`; startstedet har kun afgang i brugerfladen
 
 ### buses
 
@@ -35,6 +36,7 @@ Den lokale MVP gemmer nedenstående relationelle struktur som JSON. ID-reference
 - `paymentStatus` (`unpaid`, `cash` eller `free`), `paymentCurrency` (`DKK` eller `EUR`), `cashAmount`, `paymentLocation`, `paymentRecordedAt`, `paymentRecordedBy`
 - `freeTicketReason` (valgfri begrundelse ved gratis billet)
 - `seatNumber`, `seatType`, `seatSurcharge`, `totalPrice`
+- `extraSeatNumber`, `extraSeatAmount`, `extraSeatCurrency`, `extraSeatFree`, `extraSeatReason` ved køb af et ekstra nabosæde under billetbestillingen
 - `checkedIn`, `checkedInAt`
 - `checkedInBy`, `attendanceStatus`, `attendanceHistory` (viser medarbejder og tidspunkt for hver handling)
 
@@ -66,30 +68,46 @@ For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 - `paymentRefs`, `submittedAt`, `submittedBy`
 - `reviewedAt`, `reviewedBy`, `reviewNote`
 
+### cashTransfers
+
+- `id`, `tripId`, `fromUserId`, `toUserId`, `transferType`, `status`
+- `totals` i DKK og EUR, `cashTransferAllocations`, `note`, `receiptNumber`
+- `sourceDetailsRestricted` skjuler de underliggende billet- og bagagereferencer for chaufføren ved budgetoverførsel fra en salgschef
+- `initiatedAt`, `respondedAt` og bruger-ID'er til revisionshistorik
+
+### cashBudgetEntries
+
+- `id`, `transferId`, valgfrit `tripId`, `cashHolderUserId`
+- `paymentStatus`, `paymentLocation`, `paymentCurrency`, `cashAmount`
+- `cashHandedOverAt`, `cashSettlementId`, `createdAt`, `createdBy`
+- En budgetpost er en særskilt kassepost og er ikke billet- eller bagageomsætning.
+
 ## Adgangsregler
 
 - Administratoren kan læse og administrere alle ture.
 - En tur kan kun bruge et sted med navnet `København` eller `Tetovo` som `originId`. Andre oprettede steder kan fortsat bruges som opsamlingssted og destination.
-- `passengers.pickupStopId` er uafhængig af turens `originId`. Administratoren og de tildelte chauffører kan vælge alle oprettede steder. Salgschefens nye billetsalg er begrænset til startstedet, mens check-in kan udføres ved alle stop med passagerer.
+- `passengers.pickupStopId` er uafhængig af turens `originId`. Administratoren, salgschefer og de tildelte chauffører kan vælge alle oprettede steder, mens check-in kan udføres ved alle stop med passagerer.
 - En chauffør kan kun læse en tur, når brugerens ID er `primaryDriverId` eller `secondaryDriverId`.
-- Salgschefer kan læse alle ture og udføre check-in ved alle opsamlingssteder, som har passagerer på turen. Billetsalg, billetbetaling og bagage er fortsat begrænset til turens startsted.
+- Salgschefer kan læse alle ture, oprette og korrigere passagerer fra alle oprettede opsamlingssteder samt udføre check-in ved alle stop med passagerer. Ny bagage og betaling ved salgsstedet er fortsat knyttet til turens startsted.
 - Kun administratoren kan ændre turens chauffører, og kun når ingen passager på turen er checket ind.
 - Kun administratoren kan annullere en tur. Begrundelse, tidspunkt og administrator gemmes, og turens historik bevares.
 - Kun en tur uden passagerer, bagage, udgifter og kontantafstemninger kan slettes permanent. Ellers skal turen annulleres.
-- Kun administratoren kan oprette ture og steder. Den tildelte salgschef kan oprette passagerer og bagage fra turens startsted.
-- Kalenderen bruger `departureAt` og `durationMinutes` til at advare om overlappende brug af samme bus eller chauffør.
+- Kun administratoren kan oprette ture og steder. Salgschefer kan oprette passagerer på alle stop og bagage fra turens startsted.
+- Kalenderen bruger turens afgangstid til planlægning og viser ressourcekonflikter for bus og chauffører.
 - Kun administratoren kan redigere/slette opsamlingssteder og ændre bussens sædekapacitet.
 - Kun administratoren kan oprette, redigere og slette busser. En bus, der er tildelt en tur, kan ikke slettes.
-- Kun administratoren kan oprette, redigere og slette chaufførkonti; chauffører oprettes separat, før de kan tildeles en tur. Tildelte chauffører kan ikke slettes.
+- Kun administratoren kan oprette, redigere og slette chaufførkonti; chauffører oprettes separat, før de kan tildeles en tur. Chauffører med tildelinger eller registreret drifts-, betalings-, udgifts- eller revisionshistorik kan ikke slettes.
 - Kun administratoren kan oprette, redigere og slette salgschefkonti. `salesManagerId` kan fortsat markere den ansvarlige salgschef, men begrænser ikke turoversigten. Konti med registreret handlings- eller betalingshistorik kan ikke slettes.
 - Kun administratoren kan se den samlede salgs- og økonomirapport. DKK og EUR summeres separat uden automatisk valutaomregning.
 - Overblikssiden returnerer kun ture, opgaver og kontantansvar, som den aktuelle rolle har adgang til; administratoren ser den samlede drift.
 - En tildelt chauffør kan udføre check-in og ændre bagagestatus.
 - Turens primære og sekundære chauffør kan sælge nye kontantbetalte billetter på deres tildelte tur. Betalingen registreres som modtaget i bussen og kontanterne knyttes automatisk til den chauffør, der udførte salget.
 - Turens primære og sekundære chauffør kan også modtage ny kontantbetalt bagage i bussen. Det obligatoriske foto gemmes på turen, og kontanterne knyttes automatisk til den chauffør, der modtog bagagen.
-- Ny bagage kan kun registreres med et dokumentationsfoto i JPG-, PNG- eller WebP-format på højst 5 MB. Fotoet er knyttet til turen og kan kun ses af personale med adgang til turen.
+- Ny bagage kan kun registreres med et dokumentationsfoto i JPG-, PNG- eller WebP-format. Der er ingen særskilt filgrænse for bagagefotoet; hele API-anmodningen har en sikkerhedsgrænse på 128 MB. Fotoet er knyttet til turen og kan kun ses af personale med adgang til turen.
 - Administratoren, de tildelte chauffører og turens salgschef kan ændre betaling fra ikke betalt til betalt inden for deres arbejdssted. Betaling kan ikke ændres tilbage til ikke betalt.
 - Ved betaling i bussen knyttes kontanterne til chaufføren. Betaling ved startstedet knyttes til den tildelte salgschef.
 - Administratoren og de tildelte chauffører kan registrere turudgifter og uploade en PDF- eller billedkvittering på højst 5 MB. En udgift kan gemmes uden bilag, men kan ikke godkendes, før kvitteringen er tilføjet.
 - Chaufføren og salgschefen kan hver indsende en kontantafstemning for deres tur. Kun administratoren kan godkende eller afvise den, og kontanter flyttes først til kontoret ved godkendelse.
+- Salgschefer kan overføre et samlet disponibelt budget til en chauffør med eller uden en bestemt tur. Chaufføren ser beløb, formål og kvitteringsnummer, men ikke hvilke konkrete billetter eller bagagebetalinger budgettet stammer fra.
+- Kontante udgifter fra en chauffør eller salgschef reserveres mod personens disponible kasseposter og reducerer kassesaldoen. Samme beløb kan derfor ikke både bruges som udgift og overføres eller afstemmes.
 - Reglerne håndhæves på serveren og er ikke kun skjult i brugerfladen.

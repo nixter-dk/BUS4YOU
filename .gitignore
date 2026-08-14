@@ -3,3 +3,6 @@ data/
 .env.production
 node_modules/
 *.log
+output/
+tmp/
+.tmp-*/

@@ -13,15 +13,7 @@ npm start
 
 Åbn derefter `http://127.0.0.1:3000`.
 
-### Demo-brugere
-
-| Rolle | E-mail | Adgangskode |
-|---|---|---|
-| Administrator | `admin@albaturist.dk` | `admin123` |
-| Chauffør | `mads@albaturist.dk` | `chauffor123` |
-| Chauffør | `sara@albaturist.dk` | `chauffor123` |
-
-Skift demo-adgangskoder før løsningen bruges med rigtige data.
+En tom lokal testdatabase opretter udviklingsbrugere automatisk. De er kun beregnet til lokal test. Produktionsmiljøet opretter ingen demo-chauffører og kræver en særskilt administratoradgangskode via miljøvariabler.
 
 ## MVP-funktioner
 
@@ -37,7 +29,7 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Administratoren kan skifte turens primære og sekundære chauffør, indtil den første passager er checket ind
 - Administratoren kan annullere en tur med obligatorisk begrundelse; al historik, økonomi, passagerer og bagage bevares
 - En tom tur kan slettes permanent af administratoren, men sletning låses automatisk, så snart turen har passagerer, bagage, udgifter eller kontantafstemninger
-- Salgschefer kan se alle ture og checke passagerer ind ved alle opsamlingssteder, hvor turen har gæster; billetsalg og bagage forbliver ved turens startsted
+- Salgschefer kan se alle ture, oprette og korrigere passagerer fra alle oprettede opsamlingssteder samt checke passagerer ind ved alle stop, hvor turen har gæster; ny bagage forbliver ved turens startsted
 - Kontantbetalinger ved startstedet registreres hos den salgschef, som modtog dem, og indgår i personens kontantafstemning
 - Passager- og bagagelister viser, hvem der udførte check-in eller håndtering, hvem der modtog betalingen, og det registrerede beløb
 - Chauffører kan kun åbne ture, de selv er tildelt
@@ -60,8 +52,11 @@ Skift demo-adgangskoder før løsningen bruges med rigtige data.
 - Gratis billetter med valgfri begrundelse; de tæller med i belægningen, men ikke som indtægt eller ubetalt
 - Administrator og tildelte chauffører kan registrere ubetalte billetter og bagage som betalt i bus eller salgsbutik; betalingen kan ikke føres tilbage til ubetalt
 - Chaufførvenlig passagerliste med søgning, filtre, opsamlingsgrupper, status, udeblevet-markering, opkald og passagerdetaljer
-- Særskilt, mobilvenlig check-in-tilstand med store trykfelter, fast stopstatus, søgning, hurtigfiltre, store passagerkort, 30 sekunders fortrydelse, hændelseshistorik og offline-kø
+- Særskilt, mobilvenlig check-in-tilstand med store trykfelter, fast stopstatus, søgning, hurtigfiltre, store passagerkort, manuel uncheck fra passagerens handlingsmenu, hændelseshistorik og offline-kø
 - Kontantansvar pr. chauffør for billet- og bagagebetalinger modtaget i bussen
+- Personlig budgetkonto for chauffører og salgschefer med billet-, bagage- og budgetposteringer, disponible saldi og fuld overdragelseshistorik
+- Salgschefen kan overføre et samlet budgetbeløb til en chauffør uden at chaufføren får vist de underliggende billet- og bagagereferencer
+- Kontante udgifter reducerer automatisk den ansvarlige chaufførs eller salgschefs disponible kassebeholdning
 - Kontantafstemning pr. chauffør og tur med forventet/afleveret beløb, difference og administratorgodkendelse
 - Mobilvenlig digital udgiftsmappe per tur med betalingsmetode, betaler, kategori, beløb, DKK/EUR og PDF- eller billedkvittering
 - Udgifter kan gemmes før kvitteringen er klar, men kan først godkendes efter bilaget er tilføjet; private udlæg har særskilt tilbagebetalingsstatus
@@ -95,8 +90,8 @@ render.yaml         Samlet Render-opsætning med web, database og fil-disk
 | `DB_FILE` | `data/db.json` | Placering af databasen |
 | `DATABASE_URL` | tom | PostgreSQL-forbindelse i produktion |
 | `UPLOAD_DIR` | `data/uploads` | Bagagebilleder og kvitteringer |
-| `INITIAL_ADMIN_EMAIL` | `admin@albaturist.dk` | Første administrator i en tom database |
-| `INITIAL_ADMIN_PASSWORD` | kun lokal demo | Påkrævet i produktion, mindst 12 tegn |
+| `INITIAL_ADMIN_EMAIL` | lokal standardværdi | Første administrator i en tom database |
+| `INITIAL_ADMIN_PASSWORD` | lokal testværdi | Påkrævet i produktion, mindst 12 tegn |
 | `SESSION_TTL_HOURS` | `8` | Login-sessionens varighed |
 | `TRUST_PROXY` | `false` | Sættes til `true` bag hostingudbyderens HTTPS-proxy |
 

@@ -2,7 +2,7 @@ name: BusOps test
 
 on:
   push:
-    branches: [main]
+    branches: [main, agent/publish-busops-updates]
   pull_request:
 
 permissions:
@@ -20,6 +20,6 @@ jobs:
         with:
           node-version: 24
       - name: Installer afhængigheder
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Kontrollér og test
         run: npm run check
