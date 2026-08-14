@@ -39,6 +39,7 @@ Den lokale MVP gemmer nedenstående relationelle struktur som JSON. ID-reference
 - `extraSeatNumber`, `extraSeatAmount`, `extraSeatCurrency`, `extraSeatFree`, `extraSeatReason` ved køb af et ekstra nabosæde under billetbestillingen
 - `ticketType` (`one_way`, `return_fixed` eller `return_open`) og `journeyLeg` (`outbound` eller `return`)
 - `bookingGroupId`, `returnStatus`, `returnTripId`, `returnPassengerId` og `outboundPassengerId` forbinder ud- og returrejsen
+- `partyBookingId`, `partyPrimaryPassengerId`, `partyRole` og `partySize` forbinder en familie- eller gruppebooking. Hovedpersonen har kontakttelefon og den fælles betaling; øvrige medlemmer har betalingsstatus `group_included`
 - `openReturnValidUntil` angiver sidste gyldighedsdag for en åben returbillet
 - `checkedIn`, `checkedInAt`
 - `checkedInBy`, `attendanceStatus`, `attendanceHistory` (viser medarbejder og tidspunkt for hver handling)
@@ -46,6 +47,8 @@ Den lokale MVP gemmer nedenstående relationelle struktur som JSON. ID-reference
 For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
 
 En fast returbillet opretter en separat returpassager på den valgte returtur med betalingsstatus `return_included`. Betalingen og omsætningen registreres kun på den oprindelige billet. En åben returbillet reserverer ikke et sæde, før en bruger senere vælger en gyldig returtur og et ledigt sæde.
+
+En familie- eller gruppebooking opretter fortsat én passagerpost pr. rejsende, så alle kan få eget sæde og egen check-in. Telefon, opsamlingssted, destination, billettype og betaling deles fra hovedpersonen. Hvis hovedpersonen slettes ved en fejlrettelse, forfremmes et tilbageværende medlem automatisk, så gruppens kontakt- og betalingshistorik bevares.
 
 ### baggage
 

@@ -224,6 +224,35 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(bookedOpenReturn.returnPassenger.seatNumber, 13);
     await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: admin, body: { id: openReturn.id, deletionReason: 'Fjerner test af åben retur' } });
 
+    const partyBooking = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/group-bookings`, { method: 'POST', cookie: admin, body: {
+      phone: '40404040', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'pay_dk', paymentCurrency: 'DKK', ticketType: 'return_fixed', returnTripId: returnTrip.id,
+      passengers: [
+        { name: 'Familie Hovedperson', ticketNumber: 'FAM-001', seatNumber: 70, returnSeatNumber: 14 },
+        { name: 'Familie Medlem 1', ticketNumber: 'FAM-002', seatNumber: 71, returnSeatNumber: 15 },
+        { name: 'Familie Medlem 2', ticketNumber: 'FAM-003', seatNumber: 72, returnSeatNumber: 16 }
+      ]
+    } })).value;
+    assert.equal(partyBooking.partySize, 3);
+    assert.equal(partyBooking.passengers[0].partyRole, 'primary');
+    assert.equal(partyBooking.passengers[0].phone, '40404040');
+    assert.equal(partyBooking.passengers[1].partyRole, 'member');
+    assert.equal(partyBooking.passengers[1].phone, '');
+    assert.equal(partyBooking.passengers[1].partyContactPhone, '40404040');
+    assert.equal(partyBooking.passengers[1].paymentStatus, 'group_included');
+    const partyMember = partyBooking.passengers[1];
+    await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'PATCH', cookie: admin, body: { id: partyMember.id, checkedIn: true } });
+    await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: admin, body: { id: partyMember.id, deletionReason: 'Fjerner et familiemedlem' } });
+    let partyRecords = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}`, { cookie: admin })).value.passengers.filter(passenger => passenger.partyBookingId === partyBooking.partyBookingId);
+    assert.equal(partyRecords.length, 2);
+    assert.ok(partyRecords.every(passenger => passenger.partySize === 2));
+    await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: admin, body: { id: partyBooking.partyPrimaryPassengerId, deletionReason: 'Skifter gruppens hovedperson' } });
+    partyRecords = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}`, { cookie: admin })).value.passengers.filter(passenger => passenger.partyBookingId === partyBooking.partyBookingId);
+    assert.equal(partyRecords.length, 1);
+    assert.equal(partyRecords[0].partyRole, 'primary');
+    assert.equal(partyRecords[0].phone, '40404040');
+    assert.equal(partyRecords[0].paymentStatus, 'pay_dk');
+    await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: admin, body: { id: partyRecords[0].id, deletionReason: 'Fjerner sidste gruppemedlem' } });
+
     const unpaidPassenger = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Betaler i Danmark', ticketNumber: 'TEST-001', phone: '11111111', pickupStopId: extraStop.id, destinationStopId: destination.id, paymentStatus: 'pay_dk', seatNumber: 23 } })).value;
     await expectStatus(baseUrl, 400, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Ukendt stoppested', phone: '11111112', pickupStopId: 999999, destinationStopId: destination.id, paymentStatus: 'unpaid', seatNumber: 24 } });
     assert.equal(unpaidPassenger.paymentStatus, 'pay_dk');

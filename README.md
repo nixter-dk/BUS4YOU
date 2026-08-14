@@ -27,6 +27,7 @@ En tom lokal testdatabase opretter udviklingsbrugere automatisk. De er kun bereg
 - Faste startpunkter for ture: kun København eller Tetovo; andre steder bruges fortsat som opsamlingssted eller destination
 - Passagerens opsamlingssted vælges uafhængigt af turens startpunkt, så administratoren og de tildelte chauffører kan vælge mellem alle oprettede opsamlingssteder
 - Moderne firetrins-passagerformular til mobil og computer med enkeltbillet, fast returbillet og åben returbillet
+- Familie- og gruppebooking i samme formular: hovedpersonen angiver telefon, rute og fælles betaling én gang, mens hver rejsende får eget sæde, billetnummer, retursæde og check-in
 - To chauffører pr. tur, hvor én er primær
 - Administratoren kan skifte turens primære og sekundære chauffør, indtil den første passager er checket ind
 - Administratoren kan annullere en tur med obligatorisk begrundelse; al historik, økonomi, passagerer og bagage bevares
