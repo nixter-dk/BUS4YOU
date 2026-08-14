@@ -103,25 +103,30 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     await expectStatus(baseUrl,200,'/api/login',{method:'POST',body:{email:'minchauffor@albaturist.dk',password:'chaufforens-nye-kode'}});
     await expectStatus(baseUrl,403,`/api/sales-managers/${salesManager.id}`,{method:'PATCH',cookie:admin,body:{name:salesManager.name,email:'changed-by-admin-sales@albaturist.dk'}});
 
+    const validDepartureAt = new Date(Date.now() + 86400000);
+    const validDestinationArrivalAt = new Date(validDepartureAt.getTime() + 720 * 60000);
     await expectStatus(baseUrl, 400, '/api/trips', {
       method: 'POST', cookie: admin, body: {
         title: 'Ugyldigt startsted',
-        departureAt: new Date(Date.now() + 86400000).toISOString(),
+        departureAt: validDepartureAt.toISOString(),
+        destinationArrivalAt: validDestinationArrivalAt.toISOString(),
         originId: extraStop.id,
         destinationId: destination.id,
         busId: doubleBus.id,
         primaryDriverId: 2
       }
     });
-    await expectStatus(baseUrl, 400, '/api/trips', { method: 'POST', cookie: admin, body: { title: 'Ugyldig destination', departureAt: new Date(Date.now() + 86400000).toISOString(), originId: origin.id, destinationId: 999999, busId: doubleBus.id, primaryDriverId: 2 } });
-    await expectStatus(baseUrl, 400, '/api/trips', { method: 'POST', cookie: admin, body: { title: 'Ugyldig chauffør', departureAt: new Date(Date.now() + 86400000).toISOString(), originId: origin.id, destinationId: destination.id, busId: doubleBus.id, primaryDriverId: 999999 } });
-    await expectStatus(baseUrl, 400, '/api/trips', { method: 'POST', cookie: admin, body: { title: 'Ugyldig dato', departureAt: 'ikke-en-dato', originId: origin.id, destinationId: destination.id, busId: doubleBus.id, primaryDriverId: 2 } });
+    await expectStatus(baseUrl, 400, '/api/trips', { method: 'POST', cookie: admin, body: { title: 'Ugyldig destination', departureAt: validDepartureAt.toISOString(), destinationArrivalAt: validDestinationArrivalAt.toISOString(), originId: origin.id, destinationId: 999999, busId: doubleBus.id, primaryDriverId: 2 } });
+    await expectStatus(baseUrl, 400, '/api/trips', { method: 'POST', cookie: admin, body: { title: 'Ugyldig chauffør', departureAt: validDepartureAt.toISOString(), destinationArrivalAt: validDestinationArrivalAt.toISOString(), originId: origin.id, destinationId: destination.id, busId: doubleBus.id, primaryDriverId: 999999 } });
+    await expectStatus(baseUrl, 400, '/api/trips', { method: 'POST', cookie: admin, body: { title: 'Ugyldig dato', departureAt: 'ikke-en-dato', destinationArrivalAt: validDestinationArrivalAt.toISOString(), originId: origin.id, destinationId: destination.id, busId: doubleBus.id, primaryDriverId: 2 } });
+    await expectStatus(baseUrl, 400, '/api/trips', { method: 'POST', cookie: admin, body: { title: 'Manglende ankomst', departureAt: validDepartureAt.toISOString(), originId: origin.id, destinationId: destination.id, busId: doubleBus.id, primaryDriverId: 2 } });
+    await expectStatus(baseUrl, 400, '/api/trips', { method: 'POST', cookie: admin, body: { title: 'Ankomst før afgang', departureAt: validDepartureAt.toISOString(), destinationArrivalAt: new Date(validDepartureAt.getTime() - 60000).toISOString(), originId: origin.id, destinationId: destination.id, busId: doubleBus.id, primaryDriverId: 2 } });
 
     const trip = (await expectStatus(baseUrl, 201, '/api/trips', {
       method: 'POST', cookie: admin, body: {
         title: 'Systemtest København–Skopje',
-        departureAt: new Date(Date.now() + 86400000).toISOString(),
-        durationMinutes: 720,
+        departureAt: validDepartureAt.toISOString(),
+        destinationArrivalAt: validDestinationArrivalAt.toISOString(),
         originId: origin.id,
         destinationId: destination.id,
         basePrice: 400,
@@ -133,6 +138,7 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     })).value;
     assert.equal(trip.seatCount, 84);
     assert.equal(trip.durationMinutes, 720);
+    assert.equal(trip.destinationArrivalAt, validDestinationArrivalAt.toISOString());
     assert.equal(trip.timetable.length, 2);
     assert.equal(trip.timetable[0].stopId, origin.id);
     assert.equal(trip.timetable[1].stopId, destination.id);
@@ -148,12 +154,15 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(scheduledTrip.timetable.length, 3);
     assert.equal(scheduledTrip.timetable[1].stopId, extraStop.id);
     assert.equal(scheduledTrip.timetable[1].arrivalAt, timetable[1].arrivalAt);
+    assert.equal(scheduledTrip.destinationArrivalAt, timetable[2].arrivalAt);
+    assert.equal(scheduledTrip.timetable[2].departureAt, timetable[2].arrivalAt);
     await expectStatus(baseUrl, 409, `/api/stops/${extraStop.id}`, { method: 'DELETE', cookie: admin });
 
     const emptyTrip = (await expectStatus(baseUrl, 201, '/api/trips', {
       method: 'POST', cookie: admin, body: {
         title: 'Tom tur til sletning',
         departureAt: new Date(Date.now() + 172800000).toISOString(),
+        destinationArrivalAt: new Date(Date.now() + 172800000 + 720 * 60000).toISOString(),
         originId: origin.id,
         destinationId: destination.id,
         busId: doubleBus.id,
@@ -451,7 +460,7 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     await expectStatus(baseUrl, 200, `/api/drivers/${spareDriver.id}`, { method: 'DELETE', cookie: admin });
     await expectStatus(baseUrl, 200, `/api/buses/${standardBus.id}`, { method: 'DELETE', cookie: admin });
 
-    const closureTrip = (await expectStatus(baseUrl, 201, '/api/trips', { method:'POST',cookie:admin,body:{ title:'Kontrolleret afslutning',departureAt:new Date(Date.now()+259200000).toISOString(),originId:origin.id,destinationId:destination.id,busId:doubleBus.id,primaryDriverId:2,secondaryDriverId:3 } })).value;
+    const closureTrip = (await expectStatus(baseUrl, 201, '/api/trips', { method:'POST',cookie:admin,body:{ title:'Kontrolleret afslutning',departureAt:new Date(Date.now()+259200000).toISOString(),destinationArrivalAt:new Date(Date.now()+259200000+720*60000).toISOString(),originId:origin.id,destinationId:destination.id,busId:doubleBus.id,primaryDriverId:2,secondaryDriverId:3 } })).value;
     const closurePassenger = (await expectStatus(baseUrl,201,`/api/trips/${closureTrip.id}/passengers`,{method:'POST',cookie:admin,body:{name:'Afslutningstest',phone:'90909090',pickupStopId:origin.id,destinationStopId:destination.id,paymentStatus:'unpaid',seatNumber:10}})).value;
     const blockedClosure = await expectStatus(baseUrl,409,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:admin,body:{status:'completed'}});
     assert.equal(blockedClosure.value.blockers.passengers.length,1);
@@ -521,8 +530,10 @@ test('responsive check-in controls stay inside the visible workspace', () => {
   assert.match(app, /if\(other!==menu\)other\.open=false/);
   assert.match(app, /COPENHAGEN_TIME_ZONE='Europe\/Copenhagen'/);
   assert.match(app, /data\.departureAt=copenhagenDateFromInput\(data\.departureAt\)\.toISOString\(\)/);
-  assert.match(app, /arrivalInput\?copenhagenDateFromInput\(arrivalInput\.value\)\.toISOString\(\):departureAt/);
-  assert.match(app, /Startstedet har kun afgangstid/);
+  assert.match(app, /data\.destinationArrivalAt=copenhagenDateFromInput\(data\.destinationArrivalAt\)\.toISOString\(\)/);
+  assert.match(app, /departureInput\?copenhagenDateFromInput\(departureInput\.value\)\.toISOString\(\):arrivalAt/);
+  assert.match(html, /name="destinationArrivalAt" type="datetime-local" required/);
+  assert.match(app, /Startstedet har kun afgang, slutstedet har kun forventet ankomst/);
   assert.match(app, /<small>SÆDE NR\.<\/small>/);
   assert.match(app, /checkin-name-label">NAVN/);
   assert.match(app, /checkin-pickup"><small>OPSAMLINGSSTED/);
@@ -560,9 +571,10 @@ test('responsive check-in controls stay inside the visible workspace', () => {
   assert.match(app, /Steder og kommende tider/);
   assert.match(app, /Alle tider vises i København-tid/);
   assert.match(styles, /@media\(max-width:650px\)\{\.stop-schedule-list\{padding:8px\}/);
-  assert.match(app, /const isStart=Number\(row\.stopId\)===Number\(trip\.originId\)/);
+  assert.match(app, /isEnd=Number\(row\.stopId\)===Number\(trip\.destinationId\)/);
   assert.match(app, /Startsted · kun afgang/);
-  assert.match(app, /Startstedet har kun afgangstid/);
+  assert.match(app, /Slutsted · kun forventet ankomst/);
+  assert.match(styles, /\.timetable-stop\.destination-only/);
   assert.match(app, /function openPictureSeatPicker\(form\)/);
   assert.match(app, /function openStandardSeatPicker\(form\)/);
   assert.match(app, /function pickerExtraSeatChoice\(primarySeatNumber,extraSeatNumber\)/);

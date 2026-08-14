@@ -16,12 +16,12 @@ Den lokale MVP gemmer nedenstående relationelle struktur som JSON. ID-reference
 
 ### trips
 
-- `id`, `title`, `departureAt`, `status`
+- `id`, `title`, `departureAt`, `destinationArrivalAt`, `durationMinutes` (beregnet), `status`
 - `cancellationReason`, `cancelledAt`, `cancelledBy` ved annullering
 - `originId`, `destinationId`, `busId`
 - `seatCount` (1–84, kun administratoren kan ændre værdien)
 - `primaryDriverId`, `secondaryDriverId`, `salesManagerId`
-- `timetable`: stoppesteder med ankomst og afgang i `Europe/Copenhagen`; startstedet har kun afgang i brugerfladen
+- `timetable`: tider i `Europe/Copenhagen`; startstedet har kun afgang, slutstedet har kun forventet ankomst, og mellemstop har både ankomst og afgang
 
 ### buses
 

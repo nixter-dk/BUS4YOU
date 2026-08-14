@@ -21,6 +21,7 @@ En tom lokal testdatabase opretter udviklingsbrugere automatisk. De er kun bereg
 - Roller: administrator, chauffør og salgschef
 - Separat chaufføradministration, hvor kun administratoren kan oprette, redigere og slette chaufførkonti
 - Driftskalender med dags-, uge- og månedsvisning, mobil tidslinje, ressourcekonflikter, driftsadvarsler, filtre og hurtigt turpanel
+- Obligatorisk afgangstid ved startstedet og forventet ankomstdato/-tid ved slutstedet; turens varighed beregnes automatisk
 - Rollebaseret overblik for administrator, chauffør og salgschef med næste afgang, handlingskø, dagens tidslinje, hurtige funktioner, salg og personligt kontantansvar
 - Opsamlingssteder, som kun administratoren kan oprette, redigere og slette
 - Faste startpunkter for ture: kun København eller Tetovo; andre steder bruges fortsat som opsamlingssted eller destination

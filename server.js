@@ -107,11 +107,14 @@ function migrateDb(value) {
   if ((value.meta.version || 1) < 12) { for (const item of value.baggage) if (item.recipientName === undefined) item.recipientName = ''; value.meta.version = 12; migrated = true; }
   if ((value.meta.version || 1) < 13) {
     for (const trip of value.trips) {
-      if (Array.isArray(trip.timetable)) continue;
-      const departureAt = new Date(trip.departureAt);
-      const arrivalAt = new Date(departureAt.getTime() + (Number(trip.durationMinutes) || 480) * 60000);
-      trip.timetable = [{ stopId: trip.originId, arrivalAt: departureAt.toISOString(), departureAt: departureAt.toISOString() }];
-      if (trip.destinationId !== trip.originId) trip.timetable.push({ stopId: trip.destinationId, arrivalAt: arrivalAt.toISOString(), departureAt: arrivalAt.toISOString() });
+      if (!Array.isArray(trip.timetable)) {
+        const departureAt = new Date(trip.departureAt);
+        const arrivalAt = new Date(departureAt.getTime() + (Number(trip.durationMinutes) || 480) * 60000);
+        trip.timetable = [{ stopId: trip.originId, arrivalAt: departureAt.toISOString(), departureAt: departureAt.toISOString() }];
+        if (trip.destinationId !== trip.originId) trip.timetable.push({ stopId: trip.destinationId, arrivalAt: arrivalAt.toISOString(), departureAt: arrivalAt.toISOString() });
+      }
+      const destinationRow = trip.timetable.find(row => Number(row.stopId) === Number(trip.destinationId));
+      if (!trip.destinationArrivalAt && destinationRow?.arrivalAt) trip.destinationArrivalAt = destinationRow.arrivalAt;
     }
     value.meta.version = 13; migrated = true;
   }
@@ -634,21 +637,23 @@ async function api(req, res, pathname) {
   }
   if (pathname === '/api/trips' && req.method === 'POST') {
     if (user.role !== 'admin') return fail(res, 403, 'Kun administratoren kan oprette ture');
-    const data = await body(req); if (!data.title || !data.departureAt || !data.originId || !data.destinationId || !data.primaryDriverId || !data.busId) return fail(res, 400, 'Udfyld turens obligatoriske felter');
+    const data = await body(req); if (!data.title || !data.departureAt || !data.destinationArrivalAt || !data.originId || !data.destinationId || !data.primaryDriverId || !data.busId) return fail(res, 400, 'Udfyld turens obligatoriske felter, inklusive forventet ankomst ved slutstedet');
     const origin = db.stops.find(stop => stop.id === Number(data.originId));
     if (!isFixedStartPoint(origin)) return fail(res, 400, 'Turens startpunkt skal være København eller Tetovo');
     if(!db.stops.some(stop=>stop.id===Number(data.destinationId)))return fail(res,400,'Vælg et gyldigt slutsted');
+    if(Number(data.originId)===Number(data.destinationId))return fail(res,400,'Start- og slutsted skal være forskellige');
     if (Number(data.primaryDriverId) === Number(data.secondaryDriverId)) return fail(res, 400, 'De to chauffører skal være forskellige');
     const primaryDriver=db.users.find(candidate=>candidate.id===Number(data.primaryDriverId)&&candidate.role==='driver'),secondaryDriver=data.secondaryDriverId?db.users.find(candidate=>candidate.id===Number(data.secondaryDriverId)&&candidate.role==='driver'):null;
     if(!primaryDriver||(data.secondaryDriverId&&!secondaryDriver))return fail(res,400,'Vælg gyldige chauffører fra chaufførregisteret');
     const bus = db.buses.find(b => b.id === Number(data.busId)); if (!bus) return fail(res, 400, 'Vælg en gyldig bus');
     const salesManagerId=data.salesManagerId?Number(data.salesManagerId):null;if(salesManagerId&&!db.users.some(candidate=>candidate.id===salesManagerId&&candidate.role==='sales_manager'))return fail(res,400,'Vælg en gyldig salgschef');
-    const durationMinutes=Math.max(30,Math.min(1440,Number(data.durationMinutes)||480));
     const departureAt = new Date(data.departureAt);if(Number.isNaN(departureAt.getTime()))return fail(res,400,'Vælg en gyldig afgangstid');
-    const destinationAt = new Date(departureAt.getTime() + durationMinutes * 60000);
+    const destinationAt = new Date(data.destinationArrivalAt);if(Number.isNaN(destinationAt.getTime()))return fail(res,400,'Vælg en gyldig forventet ankomsttid ved slutstedet');
+    if(destinationAt<=departureAt)return fail(res,400,'Ankomsten ved slutstedet skal ligge efter afgangen fra startstedet');
+    const durationMinutes=Math.round((destinationAt-departureAt)/60000);
     const timetable = [{ stopId: Number(data.originId), arrivalAt: departureAt.toISOString(), departureAt: departureAt.toISOString() }];
     if (Number(data.destinationId) !== Number(data.originId)) timetable.push({ stopId: Number(data.destinationId), arrivalAt: destinationAt.toISOString(), departureAt: destinationAt.toISOString() });
-    const trip = { id: id(), title: data.title.trim(), departureAt: departureAt.toISOString(), durationMinutes, originId: Number(data.originId), destinationId: Number(data.destinationId), timetable, basePrice: Number(data.basePrice || 0), busId: bus.id, seatCount: bus.seatCount, primaryDriverId: Number(data.primaryDriverId), secondaryDriverId: data.secondaryDriverId ? Number(data.secondaryDriverId) : null, salesManagerId, status: 'planned' };
+    const trip = { id: id(), title: data.title.trim(), departureAt: departureAt.toISOString(), destinationArrivalAt: destinationAt.toISOString(), durationMinutes, originId: Number(data.originId), destinationId: Number(data.destinationId), timetable, basePrice: Number(data.basePrice || 0), busId: bus.id, seatCount: bus.seatCount, primaryDriverId: Number(data.primaryDriverId), secondaryDriverId: data.secondaryDriverId ? Number(data.secondaryDriverId) : null, salesManagerId, status: 'planned' };
     db.trips.push(trip); audit(user,'trip.created','trip',trip.id,trip.id,{title:trip.title}); await saveDb(); return json(res, 201, tripView(trip));
   }
   const expenseMatch = pathname.match(/^\/api\/expenses\/(\d+)$/);
@@ -760,10 +765,10 @@ async function api(req, res, pathname) {
       if (!Array.isArray(data.timetable) || data.timetable.length < 1) return fail(res,400,'Tidsplanen skal indeholde mindst ét stoppested');
       const timetable = [], stopIds = new Set();
       for (const row of data.timetable) {
-        const stopId = Number(row.stopId), departure = new Date(row.departureAt), arrival = new Date(stopId===trip.originId?row.departureAt:row.arrivalAt);
+        const stopId = Number(row.stopId), isOrigin=stopId===trip.originId, isDestination=stopId===trip.destinationId, arrival = new Date(isOrigin?row.departureAt:row.arrivalAt), departure = new Date(isDestination?row.arrivalAt:row.departureAt);
         if (!db.stops.some(stop => stop.id === stopId)) return fail(res,400,'Tidsplanen indeholder et ukendt opsamlingssted');
         if (stopIds.has(stopId)) return fail(res,400,'Et opsamlingssted må kun stå én gang i tidsplanen');
-        if (Number.isNaN(arrival.getTime()) || Number.isNaN(departure.getTime())) return fail(res,400,stopId===trip.originId?'Angiv afgang ved startstedet':'Angiv både ankomst og afgang ved alle stoppesteder');
+        if (Number.isNaN(arrival.getTime()) || Number.isNaN(departure.getTime())) return fail(res,400,isOrigin?'Angiv afgang ved startstedet':isDestination?'Angiv ankomst ved slutstedet':'Angiv både ankomst og afgang ved alle mellemstop');
         if (arrival > departure) return fail(res,400,'Afgang kan ikke ligge før ankomst');
         stopIds.add(stopId); timetable.push({ stopId, arrivalAt: arrival.toISOString(), departureAt: departure.toISOString() });
       }
@@ -772,6 +777,8 @@ async function api(req, res, pathname) {
       for (let index=1; index<timetable.length; index++) if (new Date(timetable[index].arrivalAt) < new Date(timetable[index-1].departureAt)) return fail(res,400,'Tiderne skal følge stoppestedernes rækkefølge');
       trip.timetable = timetable;
       trip.departureAt = timetable.find(row => row.stopId === trip.originId)?.departureAt || trip.departureAt;
+      trip.destinationArrivalAt = timetable.find(row => row.stopId === trip.destinationId)?.arrivalAt || trip.destinationArrivalAt;
+      trip.durationMinutes = Math.round((new Date(trip.destinationArrivalAt)-new Date(trip.departureAt))/60000);
       await saveDb(); return json(res,200,tripView(trip));
     }
     if (data.completedStopId) {
