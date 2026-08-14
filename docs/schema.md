@@ -37,10 +37,15 @@ Den lokale MVP gemmer nedenstående relationelle struktur som JSON. ID-reference
 - `freeTicketReason` (valgfri begrundelse ved gratis billet)
 - `seatNumber`, `seatType`, `seatSurcharge`, `totalPrice`
 - `extraSeatNumber`, `extraSeatAmount`, `extraSeatCurrency`, `extraSeatFree`, `extraSeatReason` ved køb af et ekstra nabosæde under billetbestillingen
+- `ticketType` (`one_way`, `return_fixed` eller `return_open`) og `journeyLeg` (`outbound` eller `return`)
+- `bookingGroupId`, `returnStatus`, `returnTripId`, `returnPassengerId` og `outboundPassengerId` forbinder ud- og returrejsen
+- `openReturnValidUntil` angiver sidste gyldighedsdag for en åben returbillet
 - `checkedIn`, `checkedInAt`
 - `checkedInBy`, `attendanceStatus`, `attendanceHistory` (viser medarbejder og tidspunkt for hver handling)
 
 For en SQL-database skal `(tripId, seatNumber)` have en unik constraint.
+
+En fast returbillet opretter en separat returpassager på den valgte returtur med betalingsstatus `return_included`. Betalingen og omsætningen registreres kun på den oprindelige billet. En åben returbillet reserverer ikke et sæde, før en bruger senere vælger en gyldig returtur og et ledigt sæde.
 
 ### baggage
 

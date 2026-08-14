@@ -64,7 +64,7 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(logo.response.headers.get('content-type'), 'image/png');
 
     const origin = (await expectStatus(baseUrl, 201, '/api/stops', { method: 'POST', cookie: admin, body: { name: 'København', address: 'Ingerslevsgade' } })).value;
-    const destination = (await expectStatus(baseUrl, 201, '/api/stops', { method: 'POST', cookie: admin, body: { name: 'Skopje', address: 'Busstationen' } })).value;
+    const destination = (await expectStatus(baseUrl, 201, '/api/stops', { method: 'POST', cookie: admin, body: { name: 'Tetovo', address: 'Busstationen' } })).value;
     const extraStop = (await expectStatus(baseUrl, 201, '/api/stops', { method: 'POST', cookie: admin, body: { name: 'Odense', address: 'Parkering' } })).value;
     await expectStatus(baseUrl, 403, '/api/stops', { method: 'POST', cookie: driver, body: { name: 'Ikke tilladt' } });
 
@@ -124,7 +124,7 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
 
     const trip = (await expectStatus(baseUrl, 201, '/api/trips', {
       method: 'POST', cookie: admin, body: {
-        title: 'Systemtest København–Skopje',
+        title: 'Systemtest København–Tetovo',
         departureAt: validDepartureAt.toISOString(),
         destinationArrivalAt: validDestinationArrivalAt.toISOString(),
         originId: origin.id,
@@ -158,6 +158,21 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(scheduledTrip.timetable[2].departureAt, timetable[2].arrivalAt);
     await expectStatus(baseUrl, 409, `/api/stops/${extraStop.id}`, { method: 'DELETE', cookie: admin });
 
+    const returnDepartureAt = new Date(validDepartureAt.getTime() + 3 * 86400000);
+    const returnTrip = (await expectStatus(baseUrl, 201, '/api/trips', {
+      method: 'POST', cookie: admin, body: {
+        title: 'Systemtest Tetovo–København retur',
+        departureAt: returnDepartureAt.toISOString(),
+        destinationArrivalAt: new Date(returnDepartureAt.getTime() + 720 * 60000).toISOString(),
+        originId: destination.id,
+        destinationId: origin.id,
+        busId: doubleBus.id,
+        primaryDriverId: 2,
+        secondaryDriverId: 3,
+        salesManagerId: salesManager.id
+      }
+    })).value;
+
     const emptyTrip = (await expectStatus(baseUrl, 201, '/api/trips', {
       method: 'POST', cookie: admin, body: {
         title: 'Tom tur til sletning',
@@ -190,6 +205,24 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(seats.find(seat => seat.number === 1).surcharge, 75);
     assert.equal(seats.find(seat => seat.number === 5).surcharge, 75);
     assert.equal(seats.find(seat => seat.number === 23).surcharge, 100);
+
+    const fixedReturn = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Fast returpassager', phone: '10101010', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'cash', paymentCurrency: 'DKK', cashAmount: 900, seatNumber: 80, ticketType: 'return_fixed', returnTripId: returnTrip.id, returnSeatNumber: 12 } })).value;
+    assert.equal(fixedReturn.ticketType, 'return_fixed');
+    assert.equal(fixedReturn.returnStatus, 'booked');
+    assert.equal(fixedReturn.returnPassenger.tripId, returnTrip.id);
+    assert.equal(fixedReturn.returnPassenger.seatNumber, 12);
+    assert.equal(fixedReturn.returnPassenger.paymentStatus, 'return_included');
+    assert.equal((await expectStatus(baseUrl, 200, `/api/trips/${returnTrip.id}/seats`, { cookie: admin })).value.find(seat => seat.number === 12).passengerId, fixedReturn.returnPassenger.id);
+    await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: admin, body: { id: fixedReturn.id, deletionReason: 'Fjerner test af fast retur' } });
+    assert.equal((await expectStatus(baseUrl, 200, `/api/trips/${returnTrip.id}/seats`, { cookie: admin })).value.find(seat => seat.number === 12).passengerId, null);
+
+    const openReturn = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Åben returpassager', phone: '10101012', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'pay_dk', seatNumber: 80, ticketType: 'return_open', openReturnValidUntil: '2099-12-31' } })).value;
+    assert.equal(openReturn.ticketType, 'return_open');
+    assert.equal(openReturn.returnStatus, 'open');
+    const bookedOpenReturn = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'PATCH', cookie: admin, body: { id: openReturn.id, bookOpenReturn: true, returnTripId: returnTrip.id, returnSeatNumber: 13 } })).value;
+    assert.equal(bookedOpenReturn.ticketType, 'return_fixed');
+    assert.equal(bookedOpenReturn.returnPassenger.seatNumber, 13);
+    await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: admin, body: { id: openReturn.id, deletionReason: 'Fjerner test af åben retur' } });
 
     const unpaidPassenger = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Betaler i Danmark', ticketNumber: 'TEST-001', phone: '11111111', pickupStopId: extraStop.id, destinationStopId: destination.id, paymentStatus: 'pay_dk', seatNumber: 23 } })).value;
     await expectStatus(baseUrl, 400, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Ukendt stoppested', phone: '11111112', pickupStopId: 999999, destinationStopId: destination.id, paymentStatus: 'unpaid', seatNumber: 24 } });

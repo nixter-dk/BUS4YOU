@@ -41,7 +41,7 @@ function seed() {
     { id: 3, name: 'Sara Chauffør', email: 'sara@albaturist.dk', role: 'driver', salt: driver2.salt, passwordHash: driver2.hash }
   );
   return {
-    meta: { version: 18, nextId: 20 },
+    meta: { version: 19, nextId: 20 },
     settings: { logoFile: null, logoType: null, logoName: null },
     users,
     stops: [], buses: [],
@@ -139,6 +139,19 @@ function migrateDb(value) {
     value.meta.version = 17; migrated = true;
   }
   if ((value.meta.version || 1) < 18) { value.cashBudgetEntries = value.cashBudgetEntries || []; value.meta.version = 18; migrated = true; }
+  if ((value.meta.version || 1) < 19) {
+    for (const passenger of value.passengers || []) {
+      passenger.ticketType = passenger.ticketType || 'one_way';
+      passenger.journeyLeg = passenger.journeyLeg || 'outbound';
+      passenger.bookingGroupId = passenger.bookingGroupId || null;
+      passenger.returnStatus = passenger.returnStatus || null;
+      passenger.returnTripId = passenger.returnTripId || null;
+      passenger.returnPassengerId = passenger.returnPassengerId || null;
+      passenger.outboundPassengerId = passenger.outboundPassengerId || null;
+      passenger.openReturnValidUntil = passenger.openReturnValidUntil || null;
+    }
+    value.meta.version = 19; migrated = true;
+  }
   for(const user of value.users){if(!['da','sq','de','en'].includes(user.language)){user.language='da';migrated=true}}
   for (const trip of value.trips) {
     if (!trip.seatCount) { trip.seatCount = 54; migrated = true; }
@@ -331,6 +344,24 @@ function adjacentSeatNumber(tripId,seatNumber) {
   return adjacent&&Math.floor(pairIndex/4)===Math.floor(deckIndex/4)?adjacent.number:null;
 }
 function isAdjacentSeat(tripId,seatNumber,extraSeatNumber) { return adjacentSeatNumber(tripId,seatNumber)===Number(extraSeatNumber); }
+function tripIncludesStop(trip,stopId) {
+  return Number(trip.originId)===Number(stopId)||Number(trip.destinationId)===Number(stopId)||(trip.timetable||[]).some(row=>Number(row.stopId)===Number(stopId));
+}
+function validateReturnReservation(user,outboundTrip,pickupStopId,destinationStopId,returnTripId,returnSeatNumber) {
+  const returnTrip=db.trips.find(candidate=>candidate.id===Number(returnTripId));
+  if(!returnTrip||returnTrip.id===outboundTrip.id)return{error:'Vælg en anden tur til returrejsen'};
+  if(!allowedTrip(user,returnTrip))return{error:'Du har ikke adgang til den valgte returtur'};
+  if(['cancelled','completed'].includes(returnTrip.status))return{error:'Den valgte returtur er ikke åben for booking'};
+  if(new Date(returnTrip.departureAt)<=new Date(outboundTrip.departureAt))return{error:'Returturen skal afgå efter udrejsen'};
+  if(!tripIncludesStop(returnTrip,destinationStopId)||!tripIncludesStop(returnTrip,pickupStopId))return{error:'Returturen skal køre fra udrejsens destination tilbage til opsamlingsstedet'};
+  const returnSeat=seatMap(returnTrip.id).find(candidate=>candidate.number===Number(returnSeatNumber));
+  if(!returnSeat)return{error:'Vælg et gyldigt sæde på returturen'};
+  if(returnSeat.passengerId)return{error:'Sædet på returturen er allerede reserveret'};
+  return{returnTrip,returnSeat};
+}
+function createReturnPassenger({outbound,returnTrip,returnSeat,user,bookingGroupId}) {
+  return { id:id(),tripId:returnTrip.id,name:outbound.name,ticketNumber:outbound.ticketNumber,phone:outbound.phone,pickupStopId:outbound.destinationStopId,destinationStopId:outbound.pickupStopId,paymentStatus:'return_included',paymentCurrency:outbound.paymentCurrency,ticketCashAmount:0,cashAmount:0,paymentLocation:null,paymentRecordedAt:outbound.paymentRecordedAt,paymentRecordedBy:outbound.paymentRecordedBy,cashHolderUserId:null,createdBy:user.id,freeTicketReason:'',seatNumber:returnSeat.number,seatType:returnSeat.type,seatSurcharge:returnSeat.surcharge,extraSeatNumber:null,extraSeatAmount:0,extraSeatCurrency:outbound.paymentCurrency,extraSeatFree:false,extraSeatReason:'',totalPrice:0,checkedIn:false,attendanceStatus:'pending',checkedInAt:null,checkedInBy:null,ticketType:'return_fixed',journeyLeg:'return',bookingGroupId,returnStatus:'booked',returnTripId:null,returnPassengerId:null,outboundPassengerId:outbound.id,openReturnValidUntil:null,returnBookedAt:new Date().toISOString(),returnBookedBy:user.id };
+}
 function unsettledCashRecords(tripId,driverId) {
   return allCashItems().filter(item=>(item.record.tripId===tripId||(item.kind==='budget'&&!item.record.tripId))&&item.record.paymentStatus==='cash'&&['bus','departure','budget'].includes(item.record.paymentLocation)&&item.record.cashHolderUserId===driverId&&!item.record.cashHandedOverAt);
 }
@@ -534,6 +565,7 @@ async function api(req, res, pathname) {
     }).filter(row => row.payments > 0);
     const approvedSettlements = db.cashSettlements.filter(settlement=>settlement.status==='approved');
     const cashAtOffice = ['DKK','EUR'].reduce((totals,currency)=>{totals[currency]=approvedSettlements.reduce((sum,settlement)=>sum+Number(settlement.delivered?.[currency]||0),0);return totals;},{});
+    const soldTickets=db.passengers.filter(passenger=>passenger.journeyLeg!=='return');
     const tripResults = db.trips.map(trip => {
       const passengers=db.passengers.filter(p=>p.tripId===trip.id),baggage=db.baggage.filter(b=>b.tripId===trip.id),tripExpenses=db.expenses.filter(e=>e.tripId===trip.id);
       const revenueRecords=[...passengers,...baggage].filter(record=>record.paymentStatus==='cash');
@@ -548,10 +580,10 @@ async function api(req, res, pathname) {
     });
     return json(res, 200, {
       summary: {
-        tickets: db.passengers.length, paidTickets: db.passengers.filter(p => p.paymentStatus === 'cash').length, freeTickets: db.passengers.filter(p => p.paymentStatus === 'free').length, unpaidTickets: db.passengers.filter(isPendingPayment).length,
-        ticketRevenue: sumByCurrency(db.passengers), baggage: db.baggage.length, paidBaggage: db.baggage.filter(b => b.paymentStatus === 'cash').length, unpaidBaggage: db.baggage.filter(isPendingPayment).length, baggageRevenue: sumByCurrency(db.baggage), cashByDriver, cashAtOffice, expenseTotals: ['DKK','EUR'].reduce((totals,currency)=>{ totals[currency]=db.expenses.filter(e=>e.status==='approved'&&e.currency===currency).reduce((sum,e)=>sum+Number(e.amount||0),0); return totals; },{}), pendingExpenseTotals: ['DKK','EUR'].reduce((totals,currency)=>{ totals[currency]=db.expenses.filter(e=>e.status==='pending'&&e.currency===currency).reduce((sum,e)=>sum+Number(e.amount||0),0); return totals; },{})
+        tickets: soldTickets.length, paidTickets: soldTickets.filter(p => p.paymentStatus === 'cash').length, freeTickets: soldTickets.filter(p => p.paymentStatus === 'free').length, unpaidTickets: soldTickets.filter(isPendingPayment).length,
+        ticketRevenue: sumByCurrency(soldTickets), baggage: db.baggage.length, paidBaggage: db.baggage.filter(b => b.paymentStatus === 'cash').length, unpaidBaggage: db.baggage.filter(isPendingPayment).length, baggageRevenue: sumByCurrency(db.baggage), cashByDriver, cashAtOffice, expenseTotals: ['DKK','EUR'].reduce((totals,currency)=>{ totals[currency]=db.expenses.filter(e=>e.status==='approved'&&e.currency===currency).reduce((sum,e)=>sum+Number(e.amount||0),0); return totals; },{}), pendingExpenseTotals: ['DKK','EUR'].reduce((totals,currency)=>{ totals[currency]=db.expenses.filter(e=>e.status==='pending'&&e.currency===currency).reduce((sum,e)=>sum+Number(e.amount||0),0); return totals; },{})
       },
-      tickets: db.passengers.map(addTrip), baggage: db.baggage.map(addTrip), expenses: db.expenses.map(addTrip), tripResults
+      tickets: soldTickets.map(addTrip), baggage: db.baggage.map(addTrip), expenses: db.expenses.map(addTrip), tripResults
     });
   }
   if (pathname === '/api/stops' && req.method === 'POST') {
@@ -831,12 +863,24 @@ async function api(req, res, pathname) {
     const data = await body(req); const seat = seatMap(trip.id).find(s => s.number === Number(data.seatNumber));
     if (!data.name?.trim() || !data.phone?.trim() || !data.pickupStopId || !data.destinationStopId || !seat) return fail(res, 400, 'Udfyld passagerens obligatoriske felter');
     if(!db.stops.some(stop=>stop.id===Number(data.pickupStopId))||!db.stops.some(stop=>stop.id===Number(data.destinationStopId)))return fail(res,400,'Vælg gyldige opsamlings- og destinationssteder');
+    if(Number(data.pickupStopId)===Number(data.destinationStopId))return fail(res,400,'Opsamlingssted og destination skal være forskellige');
     if(user.role==='driver'&&data.paymentStatus!=='cash')return fail(res,403,'Chaufføren kan kun oprette billetter, der betales i bussen');
     if (seat.passengerId) return fail(res, 409, 'Sædet er allerede reserveret');
     if (!['unpaid','cash','free','pay_dk','pay_mk'].includes(data.paymentStatus)) return fail(res, 400, 'Ugyldig betalingsstatus');
     if(data.paymentStatus==='cash'&&!(Number(data.cashAmount)>0))return fail(res,400,'Angiv det modtagne kontantbeløb');
     const ticketNumber=String(data.ticketNumber||'').trim();
     if(ticketNumber&&db.passengers.some(passenger=>passenger.tripId===trip.id&&String(passenger.ticketNumber||'').toLocaleLowerCase('da-DK')===ticketNumber.toLocaleLowerCase('da-DK')))return fail(res,409,'Billetnummeret bruges allerede på denne tur');
+    const ticketType=['one_way','return_fixed','return_open'].includes(data.ticketType)?data.ticketType:'one_way';
+    let openReturnValidUntil=null,returnReservation=null;
+    if(ticketType==='return_open'){
+      const validUntil=new Date(`${String(data.openReturnValidUntil||'')}T23:59:59`);
+      if(Number.isNaN(validUntil.getTime())||validUntil<=new Date(trip.departureAt))return fail(res,400,'Vælg en gyldig udløbsdato for den åbne returbillet');
+      openReturnValidUntil=validUntil.toISOString();
+    }
+    if(ticketType==='return_fixed'){
+      returnReservation=validateReturnReservation(user,trip,Number(data.pickupStopId),Number(data.destinationStopId),data.returnTripId,data.returnSeatNumber);
+      if(returnReservation.error)return fail(res,400,returnReservation.error);
+    }
     const paymentCurrency = ['DKK','EUR'].includes(data.paymentCurrency) ? data.paymentCurrency : 'DKK';
     if(user.role==='sales_manager'&&data.paymentStatus==='free')return fail(res,403,'Kun administratoren kan udstede gratis billetter');
     const extraSeatNumber=data.extraSeatNumber?Number(data.extraSeatNumber):null,extraSeatFree=data.extraSeatFree===true||data.extraSeatFree==='true',extraSeatAmount=extraSeatNumber&&!extraSeatFree?Number(data.extraSeatAmount||0):0,extraSeatCurrency=['DKK','EUR'].includes(data.extraSeatCurrency)?data.extraSeatCurrency:paymentCurrency;
@@ -849,18 +893,41 @@ async function api(req, res, pathname) {
     }
     const ticketCashAmount=data.paymentStatus==='cash'?Number(data.cashAmount||0):0,totalCashAmount=ticketCashAmount+extraSeatAmount;
     const paymentLocation=data.paymentStatus==='cash'?(user.role==='sales_manager'?'departure':user.role==='driver'?'bus':'shop'):null,cashHolderUserId=data.paymentStatus==='cash'&&['sales_manager','driver'].includes(user.role)?user.id:null;
-    const passenger = { id: id(), tripId: trip.id, name: data.name.trim(), ticketNumber, phone: data.phone.trim(), pickupStopId: Number(data.pickupStopId), destinationStopId: Number(data.destinationStopId), paymentStatus: data.paymentStatus, paymentCurrency, ticketCashAmount,cashAmount: data.paymentStatus === 'cash' ? totalCashAmount : 0, paymentLocation, paymentRecordedAt: ['cash','free'].includes(data.paymentStatus) ? new Date().toISOString() : null, paymentRecordedBy: ['cash','free'].includes(data.paymentStatus) ? user.id : null, cashHolderUserId, createdBy:user.id, freeTicketReason: data.paymentStatus === 'free' ? String(data.freeTicketReason || '').trim() : '', seatNumber: seat.number, seatType: seat.type, seatSurcharge: seat.surcharge,extraSeatNumber,extraSeatAmount,extraSeatCurrency,extraSeatFree:extraSeatNumber?extraSeatFree:false,extraSeatReason:extraSeatNumber?String(data.extraSeatReason||'').trim():'', totalPrice: data.paymentStatus === 'free' ? extraSeatAmount : trip.basePrice + seat.surcharge+extraSeatAmount, checkedIn: false, attendanceStatus: 'pending', checkedInAt: null, checkedInBy: null };
-    db.passengers.push(passenger);audit(user,'passenger.created','passenger',passenger.id,trip.id,{name:passenger.name,seatNumber:passenger.seatNumber,extraSeatNumber:passenger.extraSeatNumber,extraSeatAmount:passenger.extraSeatAmount,extraSeatFree:passenger.extraSeatFree,paymentStatus:passenger.paymentStatus}); await saveDb(); return json(res, 201, passengerRecordView(passenger));
+    const bookingGroupId=ticketType==='one_way'?null:crypto.randomUUID();
+    const passenger = { id: id(), tripId: trip.id, name: data.name.trim(), ticketNumber, phone: data.phone.trim(), pickupStopId: Number(data.pickupStopId), destinationStopId: Number(data.destinationStopId), paymentStatus: data.paymentStatus, paymentCurrency, ticketCashAmount,cashAmount: data.paymentStatus === 'cash' ? totalCashAmount : 0, paymentLocation, paymentRecordedAt: ['cash','free'].includes(data.paymentStatus) ? new Date().toISOString() : null, paymentRecordedBy: ['cash','free'].includes(data.paymentStatus) ? user.id : null, cashHolderUserId, createdBy:user.id, freeTicketReason: data.paymentStatus === 'free' ? String(data.freeTicketReason || '').trim() : '', seatNumber: seat.number, seatType: seat.type, seatSurcharge: seat.surcharge,extraSeatNumber,extraSeatAmount,extraSeatCurrency,extraSeatFree:extraSeatNumber?extraSeatFree:false,extraSeatReason:extraSeatNumber?String(data.extraSeatReason||'').trim():'', totalPrice: data.paymentStatus === 'free' ? extraSeatAmount : trip.basePrice + seat.surcharge+extraSeatAmount, checkedIn: false, attendanceStatus: 'pending', checkedInAt: null, checkedInBy: null,ticketType,journeyLeg:'outbound',bookingGroupId,returnStatus:ticketType==='return_open'?'open':ticketType==='return_fixed'?'booked':null,returnTripId:returnReservation?.returnTrip?.id||null,returnPassengerId:null,outboundPassengerId:null,openReturnValidUntil };
+    db.passengers.push(passenger);
+    let returnPassenger=null;
+    if(returnReservation){
+      returnPassenger=createReturnPassenger({outbound:passenger,returnTrip:returnReservation.returnTrip,returnSeat:returnReservation.returnSeat,user,bookingGroupId});
+      passenger.returnPassengerId=returnPassenger.id;db.passengers.push(returnPassenger);
+      audit(user,'passenger.return_booked','passenger',passenger.id,trip.id,{returnTripId:returnReservation.returnTrip.id,returnPassengerId:returnPassenger.id,returnSeatNumber:returnPassenger.seatNumber});
+    }
+    audit(user,'passenger.created','passenger',passenger.id,trip.id,{name:passenger.name,seatNumber:passenger.seatNumber,extraSeatNumber:passenger.extraSeatNumber,extraSeatAmount:passenger.extraSeatAmount,extraSeatFree:passenger.extraSeatFree,paymentStatus:passenger.paymentStatus,ticketType:passenger.ticketType,returnTripId:passenger.returnTripId}); await saveDb(); return json(res, 201, {...passengerRecordView(passenger),returnPassenger:returnPassenger?passengerRecordView(returnPassenger):null});
   }
   if (part === 'passengers' && req.method === 'DELETE') {
     if (!['admin','sales_manager','driver'].includes(user.role)) return fail(res,403,'Du har ikke adgang til at slette passagerer');
     const data=await body(req),passenger=db.passengers.find(candidate=>candidate.id===Number(data.id)&&candidate.tripId===trip.id);if(!passenger)return fail(res,404,'Passageren findes ikke');
     const reason=String(data.deletionReason||'').trim();if(reason.length<3)return fail(res,400,'Skriv kort, hvorfor passageren slettes');
     const reference=`passenger:${passenger.id}`;if(passenger.cashHandedOverAt||hasCashAuditReference(reference))return fail(res,409,'Passagerens betaling indgår i en kontantoverførsel eller afstemning og kan derfor ikke slettes');
-    recordDeletion(trip,'passenger',passenger,user,reason);audit(user,'passenger.deleted','passenger',passenger.id,trip.id,{name:passenger.name,reason});db.passengers=db.passengers.filter(candidate=>candidate.id!==passenger.id);await saveDb();return json(res,200,{ok:true,freedSeatNumber:passenger.seatNumber,freedExtraSeatNumber:passenger.extraSeatNumber||null});
+    const linkedReturn=passenger.returnPassengerId?db.passengers.find(candidate=>candidate.id===passenger.returnPassengerId):null;
+    if(linkedReturn&&(linkedReturn.checkedIn||linkedReturn.cashHandedOverAt||hasCashAuditReference(`passenger:${linkedReturn.id}`)))return fail(res,409,'Returrejsen er allerede brugt eller indgår i økonomihistorikken og kan derfor ikke slettes');
+    recordDeletion(trip,'passenger',passenger,user,reason);audit(user,'passenger.deleted','passenger',passenger.id,trip.id,{name:passenger.name,reason});
+    if(linkedReturn){const linkedTrip=db.trips.find(candidate=>candidate.id===linkedReturn.tripId);if(linkedTrip)recordDeletion(linkedTrip,'passenger',linkedReturn,user,`Retur slettet sammen med udrejsen: ${reason}`);audit(user,'passenger.return_deleted','passenger',linkedReturn.id,linkedReturn.tripId,{outboundPassengerId:passenger.id,reason});}
+    if(passenger.outboundPassengerId){const outbound=db.passengers.find(candidate=>candidate.id===passenger.outboundPassengerId);if(outbound){outbound.ticketType='return_open';outbound.returnStatus='open';outbound.returnTripId=null;outbound.returnPassengerId=null;outbound.openReturnValidUntil=outbound.openReturnValidUntil||new Date(new Date().setFullYear(new Date().getFullYear()+1)).toISOString();}}
+    const removeIds=new Set([passenger.id,linkedReturn?.id].filter(Boolean));db.passengers=db.passengers.filter(candidate=>!removeIds.has(candidate.id));await saveDb();return json(res,200,{ok:true,freedSeatNumber:passenger.seatNumber,freedExtraSeatNumber:passenger.extraSeatNumber||null,freedReturnSeatNumber:linkedReturn?.seatNumber||null});
   }
   if (part === 'passengers' && req.method === 'PATCH') {
     const data = await body(req); const passenger = db.passengers.find(p => p.id === Number(data.id) && p.tripId === trip.id); if (!passenger) return fail(res, 404, 'Passageren findes ikke');
+    if(data.bookOpenReturn===true){
+      if(!['admin','sales_manager','driver'].includes(user.role))return fail(res,403,'Du har ikke adgang til at booke en åben retur');
+      if(passenger.journeyLeg==='return'||passenger.ticketType!=='return_open'||passenger.returnStatus!=='open')return fail(res,409,'Passageren har ikke en åben returbillet');
+      if(passenger.openReturnValidUntil&&new Date(passenger.openReturnValidUntil)<new Date())return fail(res,409,'Den åbne returbillet er udløbet');
+      const reservation=validateReturnReservation(user,trip,passenger.pickupStopId,passenger.destinationStopId,data.returnTripId,data.returnSeatNumber);
+      if(reservation.error)return fail(res,400,reservation.error);
+      const bookingGroupId=passenger.bookingGroupId||crypto.randomUUID(),returnPassenger=createReturnPassenger({outbound:passenger,returnTrip:reservation.returnTrip,returnSeat:reservation.returnSeat,user,bookingGroupId});
+      passenger.ticketType='return_fixed';passenger.bookingGroupId=bookingGroupId;passenger.returnStatus='booked';passenger.returnTripId=reservation.returnTrip.id;passenger.returnPassengerId=returnPassenger.id;passenger.returnBookedAt=new Date().toISOString();passenger.returnBookedBy=user.id;db.passengers.push(returnPassenger);
+      audit(user,'passenger.open_return_booked','passenger',passenger.id,trip.id,{returnTripId:reservation.returnTrip.id,returnPassengerId:returnPassenger.id,returnSeatNumber:returnPassenger.seatNumber});await saveDb();return json(res,200,{...passengerRecordView(passenger),returnPassenger:passengerRecordView(returnPassenger)});
+    }
     if (data.edit === true) {
       const reason=correctionReason(data);if(!reason)return fail(res,400,'Skriv kort, hvorfor passageren rettes');
       const name=String(data.name||'').trim(),ticketNumber=String(data.ticketNumber||'').trim(),phone=String(data.phone||'').trim(),pickupStopId=Number(data.pickupStopId),destinationStopId=Number(data.destinationStopId),seatNumber=Number(data.seatNumber);
