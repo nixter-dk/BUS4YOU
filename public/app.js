@@ -1302,6 +1302,25 @@ renderCheckInMode=function(){
 const openTripBeforeAllPassengerCheckIn=openTrip;
 openTrip=async function(id){state.checkInAllPassengers=false;return openTripBeforeAllPassengerCheckIn(id)};
 
+// Assigned drivers must actively resolve every passenger before confirming the passenger list.
+function showDriverPassengerListClosure(){
+  const trip=state.trip.trip,passengers=state.trip.passengers,pending=passengers.filter(passenger=>!passenger.checkedIn&&passenger.attendanceStatus!=='no_show');
+  if(pending.length){state.tab='checkin';state.checkInAllPassengers=true;state.checkInListFilter='pending';toast(`${pending.length} passagerer mangler stadig behandling`);renderTrip();return}
+  $('#modalBody').innerHTML=`<section class="driver-close-dialog"><i class="bi bi-person-check-fill"></i><small>CHAUFFØRENS AFSLUTNINGSKONTROL</small><h2>Afslut passagerlisten?</h2><p>Alle ${passengers.length} passagerer er nu enten checket ind eller markeret som udeblevet. Bekræftelsen gemmes med dit navn og tidspunkt.</p><form id="driverPassengerListCloseForm" class="form"><label class="wide">Bemærkning<textarea name="note" placeholder="Valgfri intern bemærkning"></textarea></label><button class="primary wide"><i class="bi bi-check2-circle"></i> Bekræft og afslut passagerlisten</button></form></section>`;
+  $('#driverPassengerListCloseForm').onsubmit=async event=>{event.preventDefault();try{const updated=await api(`/api/trips/${trip.id}`,{method:'PATCH',body:JSON.stringify({passengerListClosed:true,note:event.target.note.value})});state.trip.trip=updated;Object.assign(state.trips.find(item=>item.id===trip.id)||{},updated);$('#modal').close();toast('Passagerlisten er afsluttet og dokumenteret');renderTrip()}catch(error){const missing=error.blockers?.passengers||[];if(missing.length){$('#modal').close();state.tab='checkin';state.checkInAllPassengers=true;state.checkInListFilter='pending';toast(`${missing.length} passagerer mangler stadig behandling`);renderTrip()}else toast(error.message)}};
+  $('#modal').showModal();
+}
+const renderTripBeforeDriverPassengerClosure=renderTrip;
+renderTrip=function(){
+  renderTripBeforeDriverPassengerClosure();
+  const trip=state.trip?.trip;if(state.user.role!=='driver'||!trip||['cancelled','completed'].includes(trip.status))return;
+  const passengers=state.trip.passengers,checked=passengers.filter(passenger=>passenger.checkedIn).length,noShow=passengers.filter(passenger=>passenger.attendanceStatus==='no_show').length,pending=passengers.length-checked-noShow,changedAfterClose=trip.passengerListClosedAt&&passengers.some(passenger=>(passenger.attendanceHistory||[]).some(event=>new Date(event.at)>new Date(trip.passengerListClosedAt))),closed=Boolean(trip.passengerListClosedAt)&&!pending&&!changedAfterClose;
+  const panel=`<section class="driver-passenger-close ${closed?'is-closed':pending?'has-pending':'is-ready'}"><div class="driver-close-icon"><i class="bi ${closed?'bi-shield-check':'bi-clipboard2-check'}"></i></div><div class="driver-close-copy"><small>CHAUFFØRENS PASSAGERKONTROL</small><strong>${closed?'Passagerlisten er afsluttet':pending?'Passagerlisten kræver handling':'Alle passagerer er behandlet'}</strong><span>${closed?`${date(trip.passengerListClosedAt)} · ${esc(trip.passengerListClosedByName||state.user.name)}`:pending?'Turen kan ikke afsluttes, før alle passagerer har en status.':'Listen er klar til din endelige bekræftelse.'}</span></div><div class="driver-close-counts"><span><b>${checked}</b><small>Checket ind</small></span><span><b>${noShow}</b><small>Udeblevet</small></span><span class="${pending?'attention':''}"><b>${pending}</b><small>Afventer</small></span></div><div class="driver-close-action">${closed?'<span class="driver-close-confirmed"><i class="bi bi-check2-circle"></i> Dokumenteret</span>':pending?`<button class="btn btn-warning" id="showPendingPassengers"><i class="bi bi-people"></i> Vis ${pending} manglende</button>`:'<button class="btn btn-success" id="closePassengerList"><i class="bi bi-check2-circle"></i> Afslut passagerlisten</button>'}</div></section>`;
+  const anchor=$('.trip-cancelled-banner')||$('.trip-closed-banner')||$('.detail-hero');anchor?.insertAdjacentHTML('afterend',panel);
+  $('#showPendingPassengers')?.addEventListener('click',()=>{state.tab='checkin';state.checkInAllPassengers=true;state.checkInListFilter='pending';renderTrip()});
+  $('#closePassengerList')?.addEventListener('click',showDriverPassengerListClosure);
+};
+
 try{setAppLanguage(localStorage.getItem('busopsLanguage')||'da')}catch(_){setAppLanguage('da')}
 
 // A sales manager or assigned driver can reserve one additional seat for a passenger.

@@ -562,7 +562,17 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     const closurePassenger = (await expectStatus(baseUrl,201,`/api/trips/${closureTrip.id}/passengers`,{method:'POST',cookie:admin,body:{name:'Afslutningstest',phone:'90909090',pickupStopId:origin.id,destinationStopId:destination.id,paymentStatus:'unpaid',seatNumber:10}})).value;
     const blockedClosure = await expectStatus(baseUrl,409,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:admin,body:{status:'completed'}});
     assert.equal(blockedClosure.value.blockers.passengers.length,1);
+    const blockedDriverListClosure=await expectStatus(baseUrl,409,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{passengerListClosed:true}});
+    assert.equal(blockedDriverListClosure.value.blockers.passengers[0].name,'Afslutningstest');
+    await expectStatus(baseUrl,403,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:sales,body:{passengerListClosed:true}});
     await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}/passengers`,{method:'PATCH',cookie:driver,body:{id:closurePassenger.id,attendanceStatus:'no_show'}});
+    const closedPassengerList=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{passengerListClosed:true,note:'Alle passagerer behandlet'}})).value;
+    assert.ok(closedPassengerList.passengerListClosedAt);
+    assert.equal(closedPassengerList.passengerListClosedByName,'Mads Chauffør');
+    await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}/passengers`,{method:'PATCH',cookie:driver,body:{id:closurePassenger.id,checkedIn:true}});
+    const reopenedPassengerList=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{cookie:driver})).value;
+    assert.equal(reopenedPassengerList.trip.passengerListClosedAt,null);
+    await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{passengerListClosed:true,note:'Genkontrolleret efter rettelse'}});
     const completedTrip=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:admin,body:{status:'completed',closeNote:'Alle poster er kontrolleret'}})).value;
     assert.equal(completedTrip.status,'completed');
     assert.ok(completedTrip.economyLockedAt);

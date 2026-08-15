@@ -326,7 +326,7 @@ function tripView(t) {
     primaryDriver: db.users.find(u => u.id === t.primaryDriverId)?.name || null,
     secondaryDriver: db.users.find(u => u.id === t.secondaryDriverId)?.name || null,
     salesManager: db.users.find(u => u.id === t.salesManagerId)?.name || null,
-    cancelledByName: userName(t.cancelledBy), closedByName:userName(t.closedBy), reopenedByName:userName(t.reopenedBy), departureChecklist:departureChecklistView(t),
+    cancelledByName: userName(t.cancelledBy), closedByName:userName(t.closedBy), reopenedByName:userName(t.reopenedBy), passengerListClosedByName:userName(t.passengerListClosedBy), departureChecklist:departureChecklistView(t),
     counts: { passengers: passengers.length, checkedIn: passengers.filter(p => p.checkedIn).length, baggage: baggage.length, onboard: baggage.filter(b => b.status === 'onboard').length, unpaid: [...passengers,...baggage].filter(isPendingPayment).length, pendingExpenses:expenses.filter(expense=>(expense.status||'pending')==='pending').length, missingReceipts:expenses.filter(expense=>!expense.receiptFile).length, unsettledCash:unsettledCash.length }
   };
 }
@@ -353,6 +353,12 @@ function tripCloseBlockers(trip) {
   };
 }
 function hasCloseBlockers(blockers) { return Object.values(blockers).some(value=>Array.isArray(value)&&value.length); }
+function reopenPassengerListForChange(trip,user,reason) {
+  if(!trip.passengerListClosedAt)return;
+  const previous={closedAt:trip.passengerListClosedAt,closedBy:trip.passengerListClosedBy};
+  trip.passengerListClosedAt=null;trip.passengerListClosedBy=null;trip.passengerListCloseNote='';
+  audit(user,'trip.passenger_list_reopened','trip',trip.id,trip.id,{reason,previous});
+}
 function seatMap(tripId) {
   const trip = db.trips.find(t => t.id === tripId);
   const taken = new Map();
@@ -809,6 +815,15 @@ async function api(req, res, pathname) {
   }
   if (!part && req.method === 'PATCH') {
     const data = await body(req);
+    if (Object.prototype.hasOwnProperty.call(data,'passengerListClosed')) {
+      if(user.role!=='driver')return fail(res,403,'Kun en tildelt chauffør kan afslutte passagerlisten');
+      if(data.passengerListClosed!==true)return fail(res,400,'Passagerlisten kan kun afsluttes, når alle passagerer er behandlet');
+      if(trip.status!=='planned')return fail(res,409,'Passagerlisten kan kun afsluttes på en aktiv tur');
+      const pending=db.passengers.filter(item=>item.tripId===trip.id&&!item.checkedIn&&item.attendanceStatus!=='no_show').map(item=>({id:item.id,name:item.name,seatNumber:item.seatNumber,pickupStopId:item.pickupStopId}));
+      if(pending.length)return failDetails(res,409,'Alle passagerer skal være checket ind eller markeret som udeblevet',{blockers:{passengers:pending}});
+      const at=new Date().toISOString();trip.passengerListClosedAt=at;trip.passengerListClosedBy=user.id;trip.passengerListCloseNote=String(data.note||'').trim();
+      audit(user,'trip.passenger_list_closed','trip',trip.id,trip.id,{passengers:db.passengers.filter(item=>item.tripId===trip.id).length,note:trip.passengerListCloseNote});await saveDb();return json(res,200,tripView(trip));
+    }
     if (Object.prototype.hasOwnProperty.call(data,'status')) {
       if (user.role !== 'admin') return fail(res,403,'Kun administratoren kan ændre turens status');
       if(data.status==='completed'){
@@ -949,12 +964,13 @@ async function api(req, res, pathname) {
       prepared.push({name,ticketNumber,seat,extraSeatNumber,extraSeatAmount,extraSeatCurrency,extraSeatFree:extraSeatNumber?extraSeatFree:false,extraSeatReason:extraSeatNumber?String(item.extraSeatReason||'').trim():'',returnReservation});
     }
     const partyBookingId=crypto.randomUUID(),outboundIds=prepared.map(()=>id()),partyPrimaryPassengerId=outboundIds[0],partySize=prepared.length,paymentLocation=paymentStatus==='cash'?(user.role==='sales_manager'?'departure':user.role==='driver'?'bus':'shop'):null,cashHolderUserId=paymentStatus==='cash'&&['sales_manager','driver'].includes(user.role)?user.id:null,sharedTicketCashAmount=paymentStatus==='cash'?Number(data.cashAmount||0):0;
+    reopenPassengerListForChange(trip,user,'Ny gruppebooking');
     const created=[];
     for(let index=0;index<prepared.length;index++){
       const item=prepared[index],isPrimary=index===0,bookingGroupId=ticketType==='one_way'?null:crypto.randomUUID();
       const passenger={id:outboundIds[index],tripId:trip.id,name:item.name,ticketNumber:item.ticketNumber,phone:isPrimary?contactPhone:'',pickupStopId,destinationStopId,paymentStatus:isPrimary?paymentStatus:'group_included',paymentCurrency,ticketCashAmount:isPrimary?sharedTicketCashAmount:0,cashAmount:isPrimary&&paymentStatus==='cash'?sharedTicketCashAmount+totalExtraAmount:0,paymentLocation:isPrimary?paymentLocation:null,paymentRecordedAt:isPrimary&&['cash','free'].includes(paymentStatus)?new Date().toISOString():null,paymentRecordedBy:isPrimary&&['cash','free'].includes(paymentStatus)?user.id:null,cashHolderUserId:isPrimary?cashHolderUserId:null,createdBy:user.id,freeTicketReason:isPrimary&&paymentStatus==='free'?String(data.freeTicketReason||'').trim():'',seatNumber:item.seat.number,seatType:item.seat.type,seatSurcharge:item.seat.surcharge,extraSeatNumber:item.extraSeatNumber,extraSeatAmount:item.extraSeatAmount,extraSeatCurrency:item.extraSeatCurrency,extraSeatFree:item.extraSeatFree,extraSeatReason:item.extraSeatReason,totalPrice:paymentStatus==='free'?item.extraSeatAmount:trip.basePrice+item.seat.surcharge+item.extraSeatAmount,checkedIn:false,attendanceStatus:'pending',checkedInAt:null,checkedInBy:null,ticketType,journeyLeg:'outbound',bookingGroupId,returnStatus:ticketType==='return_open'?'open':ticketType==='return_fixed'?'booked':null,returnTripId:returnTrip?.id||null,returnPassengerId:null,outboundPassengerId:null,openReturnValidUntil,partyBookingId,partyPrimaryPassengerId,partyRole:isPrimary?'primary':'member',partySize};
       db.passengers.push(passenger);created.push(passenger);
-      if(item.returnReservation){const returnPassenger=createReturnPassenger({outbound:passenger,returnTrip:item.returnReservation.returnTrip,returnSeat:item.returnReservation.returnSeat,user,bookingGroupId});passenger.returnPassengerId=returnPassenger.id;db.passengers.push(returnPassenger);audit(user,'passenger.return_booked','passenger',passenger.id,trip.id,{returnTripId:returnPassenger.tripId,returnPassengerId:returnPassenger.id,returnSeatNumber:returnPassenger.seatNumber,partyBookingId});}
+      if(item.returnReservation){reopenPassengerListForChange(item.returnReservation.returnTrip,user,'Ny returpassager');const returnPassenger=createReturnPassenger({outbound:passenger,returnTrip:item.returnReservation.returnTrip,returnSeat:item.returnReservation.returnSeat,user,bookingGroupId});passenger.returnPassengerId=returnPassenger.id;db.passengers.push(returnPassenger);audit(user,'passenger.return_booked','passenger',passenger.id,trip.id,{returnTripId:returnPassenger.tripId,returnPassengerId:returnPassenger.id,returnSeatNumber:returnPassenger.seatNumber,partyBookingId});}
       audit(user,'passenger.created','passenger',passenger.id,trip.id,{name:passenger.name,seatNumber:passenger.seatNumber,paymentStatus:passenger.paymentStatus,ticketType,partyBookingId,partyRole:passenger.partyRole});
     }
     audit(user,'party_booking.created','party_booking',partyPrimaryPassengerId,trip.id,{partyBookingId,partySize,pickupStopId,destinationStopId,ticketType,returnTripId:returnTrip?.id||null});
@@ -996,11 +1012,12 @@ async function api(req, res, pathname) {
     const ticketCashAmount=data.paymentStatus==='cash'?Number(data.cashAmount||0):0,totalCashAmount=ticketCashAmount+extraSeatAmount;
     const paymentLocation=data.paymentStatus==='cash'?(user.role==='sales_manager'?'departure':user.role==='driver'?'bus':'shop'):null,cashHolderUserId=data.paymentStatus==='cash'&&['sales_manager','driver'].includes(user.role)?user.id:null;
     const bookingGroupId=ticketType==='one_way'?null:crypto.randomUUID();
+    reopenPassengerListForChange(trip,user,'Ny passager');
     const passenger = { id: id(), tripId: trip.id, name: data.name.trim(), ticketNumber, phone: data.phone.trim(), pickupStopId: Number(data.pickupStopId), destinationStopId: Number(data.destinationStopId), paymentStatus: data.paymentStatus, paymentCurrency, ticketCashAmount,cashAmount: data.paymentStatus === 'cash' ? totalCashAmount : 0, paymentLocation, paymentRecordedAt: ['cash','free'].includes(data.paymentStatus) ? new Date().toISOString() : null, paymentRecordedBy: ['cash','free'].includes(data.paymentStatus) ? user.id : null, cashHolderUserId, createdBy:user.id, freeTicketReason: data.paymentStatus === 'free' ? String(data.freeTicketReason || '').trim() : '', seatNumber: seat.number, seatType: seat.type, seatSurcharge: seat.surcharge,extraSeatNumber,extraSeatAmount,extraSeatCurrency,extraSeatFree:extraSeatNumber?extraSeatFree:false,extraSeatReason:extraSeatNumber?String(data.extraSeatReason||'').trim():'', totalPrice: data.paymentStatus === 'free' ? extraSeatAmount : trip.basePrice + seat.surcharge+extraSeatAmount, checkedIn: false, attendanceStatus: 'pending', checkedInAt: null, checkedInBy: null,ticketType,journeyLeg:'outbound',bookingGroupId,returnStatus:ticketType==='return_open'?'open':ticketType==='return_fixed'?'booked':null,returnTripId:returnReservation?.returnTrip?.id||null,returnPassengerId:null,outboundPassengerId:null,openReturnValidUntil,partyBookingId:null,partyPrimaryPassengerId:null,partyRole:null,partySize:null };
     db.passengers.push(passenger);
     let returnPassenger=null;
     if(returnReservation){
-      returnPassenger=createReturnPassenger({outbound:passenger,returnTrip:returnReservation.returnTrip,returnSeat:returnReservation.returnSeat,user,bookingGroupId});
+      reopenPassengerListForChange(returnReservation.returnTrip,user,'Ny returpassager');returnPassenger=createReturnPassenger({outbound:passenger,returnTrip:returnReservation.returnTrip,returnSeat:returnReservation.returnSeat,user,bookingGroupId});
       passenger.returnPassengerId=returnPassenger.id;db.passengers.push(returnPassenger);
       audit(user,'passenger.return_booked','passenger',passenger.id,trip.id,{returnTripId:returnReservation.returnTrip.id,returnPassengerId:returnPassenger.id,returnSeatNumber:returnPassenger.seatNumber});
     }
@@ -1013,8 +1030,8 @@ async function api(req, res, pathname) {
     const reference=`passenger:${passenger.id}`;if(passenger.cashHandedOverAt||hasCashAuditReference(reference))return fail(res,409,'Passagerens betaling indgår i en kontantoverførsel eller afstemning og kan derfor ikke slettes');
     const linkedReturn=passenger.returnPassengerId?db.passengers.find(candidate=>candidate.id===passenger.returnPassengerId):null;
     if(linkedReturn&&(linkedReturn.checkedIn||linkedReturn.cashHandedOverAt||hasCashAuditReference(`passenger:${linkedReturn.id}`)))return fail(res,409,'Returrejsen er allerede brugt eller indgår i økonomihistorikken og kan derfor ikke slettes');
-    recordDeletion(trip,'passenger',passenger,user,reason);audit(user,'passenger.deleted','passenger',passenger.id,trip.id,{name:passenger.name,reason});
-    if(linkedReturn){const linkedTrip=db.trips.find(candidate=>candidate.id===linkedReturn.tripId);if(linkedTrip)recordDeletion(linkedTrip,'passenger',linkedReturn,user,`Retur slettet sammen med udrejsen: ${reason}`);audit(user,'passenger.return_deleted','passenger',linkedReturn.id,linkedReturn.tripId,{outboundPassengerId:passenger.id,reason});}
+    reopenPassengerListForChange(trip,user,'Passager slettet');recordDeletion(trip,'passenger',passenger,user,reason);audit(user,'passenger.deleted','passenger',passenger.id,trip.id,{name:passenger.name,reason});
+    if(linkedReturn){const linkedTrip=db.trips.find(candidate=>candidate.id===linkedReturn.tripId);if(linkedTrip){reopenPassengerListForChange(linkedTrip,user,'Returpassager slettet');recordDeletion(linkedTrip,'passenger',linkedReturn,user,`Retur slettet sammen med udrejsen: ${reason}`)}audit(user,'passenger.return_deleted','passenger',linkedReturn.id,linkedReturn.tripId,{outboundPassengerId:passenger.id,reason});}
     if(passenger.outboundPassengerId){const outbound=db.passengers.find(candidate=>candidate.id===passenger.outboundPassengerId);if(outbound){outbound.ticketType='return_open';outbound.returnStatus='open';outbound.returnTripId=null;outbound.returnPassengerId=null;outbound.openReturnValidUntil=outbound.openReturnValidUntil||new Date(new Date().setFullYear(new Date().getFullYear()+1)).toISOString();}}
     const removeIds=new Set([passenger.id,linkedReturn?.id].filter(Boolean)),partyBookingId=passenger.partyBookingId;
     if(partyBookingId&&passenger.journeyLeg==='outbound'){
@@ -1101,11 +1118,12 @@ async function api(req, res, pathname) {
     }
     if (typeof data.checkedIn === 'boolean') {
       if (data.checkedIn === passenger.checkedIn) return json(res,200,passengerRecordView(passenger));
+      reopenPassengerListForChange(trip,user,'Passagerstatus ændret');
       passenger.checkedIn = data.checkedIn; passenger.attendanceStatus = passenger.checkedIn ? 'checked_in' : 'pending'; passenger.checkedInAt = passenger.checkedIn ? new Date().toISOString() : null; passenger.checkedInBy = passenger.checkedIn ? user.id : null;
       if (passenger.checkedIn && passenger.paymentLocation === 'bus' && user.role === 'driver') passenger.cashHolderUserId = user.id;
       passenger.attendanceHistory = passenger.attendanceHistory || []; const attendanceEvent={ action:passenger.checkedIn?'checked_in':'check_in_undone',at:new Date().toISOString(),userId:user.id,stopId:passenger.pickupStopId }; if(passenger.checkedIn)Object.assign(attendanceEvent,{receivedAmount:passenger.paymentStatus==='cash'?Number(passenger.cashAmount||0):0,receivedCurrency:passenger.paymentCurrency||'DKK',receivedBy:passenger.paymentStatus==='cash'?(passenger.cashHolderUserId||passenger.paymentRecordedBy):null}); passenger.attendanceHistory.push(attendanceEvent);
     }
-    if (data.attendanceStatus === 'no_show') { passenger.checkedIn = false; passenger.attendanceStatus = 'no_show'; passenger.checkedInAt = null; passenger.checkedInBy = null; passenger.attendanceHistory = passenger.attendanceHistory || []; passenger.attendanceHistory.push({action:'no_show',at:new Date().toISOString(),userId:user.id,stopId:passenger.pickupStopId}); }
+    if (data.attendanceStatus === 'no_show') { if(passenger.attendanceStatus==='no_show')return json(res,200,passengerRecordView(passenger));reopenPassengerListForChange(trip,user,'Passager markeret udeblevet');passenger.checkedIn = false; passenger.attendanceStatus = 'no_show'; passenger.checkedInAt = null; passenger.checkedInBy = null; passenger.attendanceHistory = passenger.attendanceHistory || []; passenger.attendanceHistory.push({action:'no_show',at:new Date().toISOString(),userId:user.id,stopId:passenger.pickupStopId}); }
     audit(user,data.paymentStatus==='cash'?'passenger.payment_recorded':typeof data.checkedIn==='boolean'?(data.checkedIn?'passenger.checked_in':'passenger.unchecked'):data.attendanceStatus==='no_show'?'passenger.no_show':'passenger.updated','passenger',passenger.id,trip.id);await saveDb(); return json(res, 200, passengerRecordView(passenger));
   }
   if (part === 'baggage' && req.method === 'POST') {
