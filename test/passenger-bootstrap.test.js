@@ -34,6 +34,13 @@ test('passenger and check-in lists use the responsive Bootstrap workspace', () =
   assert.match(app, /function renderDepartureChecklistTab\(\)/);
   assert.match(app, /data-departure-check/);
   assert.match(app, /Afgangskontrol/);
+  const mainApp = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+  assert.match(mainApp, /function operationalLifecyclePanel\(trip\)/);
+  assert.match(mainApp, /operations-action-center/);
+  assert.match(mainApp, /renderReportsBeforeFinancialLedger/);
+  assert.match(mainApp, /Økonomisk journal/);
+  assert.match(mainApp, /function renderNotificationDrafts\(\)/);
+  assert.match(mainApp, /data-notification-tab/);
   assert.match(app, /Sortér: Sæde/);
   assert.match(css, /\.bootstrap-passenger-toolbar\{position:sticky/);
   assert.match(css, /@media\(max-width:760px\)\{\.bootstrap-passenger-workspace/);
@@ -46,4 +53,8 @@ test('passenger and check-in lists use the responsive Bootstrap workspace', () =
   assert.match(css, /\.driver-ticket-workspace\{/);
   assert.match(css, /\.departure-checklist-workspace\{/);
   assert.match(css, /\.external-payment-modal\{/);
+  assert.match(css, /\.operational-lifecycle\{/);
+  assert.match(css, /\.operations-action-center\{/);
+  assert.match(css, /\.financial-ledger\{/);
+  assert.match(css, /\.notification-draft-workspace\{/);
 });

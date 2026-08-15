@@ -22,6 +22,8 @@ Den lokale MVP gemmer nedenstående relationelle struktur som JSON. ID-reference
 - `seatCount` (1–84, kun administratoren kan ændre værdien)
 - `primaryDriverId`, `secondaryDriverId`, `salesManagerId`
 - `timetable`: tider i `Europe/Copenhagen`; startstedet har kun afgang, slutstedet har kun forventet ankomst, og mellemstop har både ankomst og afgang
+- `boardingStartedAt`, `startedAt`, `arrivedAt` og tilhørende bruger-ID'er dokumenterer turens operationelle livscyklus
+- `passengerListClosedAt`, `passengerListClosedBy` dokumenterer chaufførens endelige passagerkontrol
 
 ### buses
 
@@ -33,7 +35,7 @@ Den lokale MVP gemmer nedenstående relationelle struktur som JSON. ID-reference
 
 - `id`, `tripId`, `name`, `phone`
 - `pickupStopId`, `destinationStopId`
-- `paymentStatus` (`unpaid`, `cash` eller `free`), `paymentCurrency` (`DKK` eller `EUR`), `cashAmount`, `paymentLocation`, `paymentRecordedAt`, `paymentRecordedBy`
+- `paymentStatus` (`unpaid`, `cash`, `free`, `pay_dk`, `pay_mk`, `group_included` eller `return_included`), `paymentCurrency` (`DKK` eller `EUR`), `cashAmount`, `paymentLocation`, `paymentRecordedAt`, `paymentRecordedBy`
 - `freeTicketReason` (valgfri begrundelse ved gratis billet)
 - `seatNumber`, `seatType`, `seatSurcharge`, `totalPrice`
 - `extraSeatNumber`, `extraSeatAmount`, `extraSeatCurrency`, `extraSeatFree`, `extraSeatReason` ved køb af et ekstra nabosæde under billetbestillingen
@@ -90,6 +92,12 @@ En familie- eller gruppebooking opretter fortsat én passagerpost pr. rejsende, 
 - `cashHandedOverAt`, `cashSettlementId`, `createdAt`, `createdBy`
 - En budgetpost er en særskilt kassepost og er ikke billet- eller bagageomsætning.
 
+### notificationDrafts
+
+- `id`, `tripId`, `type`, `channel`, `phone`, `recipientName`, `body`
+- `status` er `draft` eller `archived`; kladder sendes ikke automatisk uden en ekstern beskedtjeneste
+- `createdAt`, `createdBy`, `archivedAt`, `archivedBy` bevarer revisionshistorikken
+
 ## Adgangsregler
 
 - Administratoren kan læse og administrere alle ture.
@@ -100,7 +108,7 @@ En familie- eller gruppebooking opretter fortsat én passagerpost pr. rejsende, 
 - Kun administratoren kan ændre turens chauffører, og kun når ingen passager på turen er checket ind.
 - Kun administratoren kan annullere en tur. Begrundelse, tidspunkt og administrator gemmes, og turens historik bevares.
 - Kun en tur uden passagerer, bagage, udgifter og kontantafstemninger kan slettes permanent. Ellers skal turen annulleres.
-- Kun administratoren kan oprette ture og steder. Salgschefer kan oprette passagerer på alle stop og bagage fra turens startsted.
+- Administratoren og salgschefer kan oprette ture. Kun administratoren kan oprette steder. Salgschefer kan oprette passagerer på alle stop og bagage fra turens startsted.
 - Kalenderen bruger turens afgangstid til planlægning og viser ressourcekonflikter for bus og chauffører.
 - Kun administratoren kan redigere/slette opsamlingssteder og ændre bussens sædekapacitet.
 - Kun administratoren kan oprette, redigere og slette busser. En bus, der er tildelt en tur, kan ikke slettes.

@@ -23,6 +23,7 @@ En tom lokal testdatabase opretter udviklingsbrugere automatisk. De er kun bereg
 - Driftskalender med dags-, uge- og månedsvisning, mobil tidslinje, ressourcekonflikter, driftsadvarsler, filtre og hurtigt turpanel
 - Obligatorisk afgangstid ved startstedet og forventet ankomstdato/-tid ved slutstedet; turens varighed beregnes automatisk
 - Rollebaseret overblik for administrator, chauffør og salgschef med næste afgang, handlingskø, dagens tidslinje, hurtige funktioner, salg og personligt kontantansvar
+- Central driftskontrol med prioriterede handlinger pr. tur og fast turlivscyklus: planlagt, check-in åbnet, undervejs, ankommet, økonomi afventer og afsluttet
 - Opsamlingssteder, som kun administratoren kan oprette, redigere og slette
 - Faste startpunkter for ture: kun København eller Tetovo; andre steder bruges fortsat som opsamlingssted eller destination
 - Passagerens opsamlingssted vælges uafhængigt af turens startpunkt, så administratoren og de tildelte chauffører kan vælge mellem alle oprettede opsamlingssteder
@@ -42,6 +43,7 @@ En tom lokal testdatabase opretter udviklingsbrugere automatisk. De er kun bereg
 - Kontant betaling af både billet og bagage i DKK eller EUR
 - Administratorrapport med solgte billetter samt billet- og bagageindtægter opdelt i DKK og EUR
 - Resultat pr. tur med omsætning, godkendte/afventende udgifter, nettoresultat, belægningsgrad, periodefiltre og CSV-eksport
+- Skrivebeskyttet økonomisk journal, der samler indtægter, godkendte udgifter, pengeoverførsler og kontantafstemninger uden dobbelttælling
 - Avanceret økonomianalyse pr. tur med billet- og bagagekontanter, salgsbutik, afleverede og uafleverede kontanter, medarbejderansvar, udgiftskategorier og udvidelige turdetaljer
 - Administratorgodkendelse eller afvisning af turudgifter; kun godkendte udgifter indgår i resultatet
 - Visuel sædeplan med grøn markering af ledige sæder og unik reservation pr. tur
@@ -55,6 +57,7 @@ En tom lokal testdatabase opretter udviklingsbrugere automatisk. De er kun bereg
 - Gratis billetter med valgfri begrundelse; de tæller med i belægningen, men ikke som indtægt eller ubetalt
 - Administrator og tildelte chauffører kan registrere ubetalte billetter og bagage som betalt i bus eller salgsbutik; betalingen kan ikke føres tilbage til ubetalt
 - Chaufførvenlig passagerliste med søgning, filtre, opsamlingsgrupper, status, udeblevet-markering, opkald og passagerdetaljer
+- Chaufførens afslutningskontrol kræver, at turen er startet, og at hver passager er checket ind eller markeret som udeblevet; efterfølgende rettelser genåbner automatisk kontrollen
 - Særskilt, mobilvenlig check-in-tilstand med store trykfelter, fast stopstatus, søgning, hurtigfiltre, store passagerkort, manuel uncheck fra passagerens handlingsmenu, hændelseshistorik og offline-kø
 - Kontantansvar pr. chauffør for billet- og bagagebetalinger modtaget i bussen
 - Personlig budgetkonto for chauffører og salgschefer med billet-, bagage- og budgetposteringer, disponible saldi og fuld overdragelseshistorik
@@ -66,6 +69,7 @@ En tom lokal testdatabase opretter udviklingsbrugere automatisk. De er kun bereg
 - Separat liste over sendt bagage
 - Obligatorisk foto af hver bagageforsendelse som dokumentation på den valgte tur
 - Bagageflow: registreret, modtaget, ombord, udleveret og ikke afhentet
+- Interne beskedkladder til bookingbekræftelser og aflysninger; de sendes ikke eksternt, før en godkendt SMS- eller e-mailtjeneste bliver tilkoblet
 - Vedvarende lokal database med atomisk lagring
 
 ## Struktur

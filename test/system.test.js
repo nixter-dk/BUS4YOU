@@ -254,6 +254,12 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(partyBooking.passengers[1].phone, '');
     assert.equal(partyBooking.passengers[1].partyContactPhone, '40404040');
     assert.equal(partyBooking.passengers[1].paymentStatus, 'group_included');
+    const notificationView=(await expectStatus(baseUrl,200,`/api/trips/${trip.id}`,{cookie:admin})).value;
+    const groupNotification=notificationView.notifications.find(item=>item.phone==='40404040'&&item.type==='booking_confirmation');
+    assert.ok(groupNotification.body.includes('3 passagerer'));
+    assert.equal((await expectStatus(baseUrl,200,`/api/trips/${trip.id}`,{cookie:driver})).value.notifications.length,0);
+    const archivedNotification=(await expectStatus(baseUrl,200,`/api/trips/${trip.id}/notifications`,{method:'PATCH',cookie:admin,body:{id:groupNotification.id,status:'archived'}})).value;
+    assert.equal(archivedNotification.status,'archived');
     const partyMember = partyBooking.passengers[1];
     await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'PATCH', cookie: admin, body: { id: partyMember.id, checkedIn: true } });
     await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: admin, body: { id: partyMember.id, deletionReason: 'Fjerner et familiemedlem' } });
@@ -539,6 +545,10 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.ok(reports.expenses.some(item=>item.id===salesExpense.id&&item.expenseScope==='sales_preparation'));
     assert.deepEqual(reports.tripResults[0].net, { DKK: 555, EUR: 85 });
     assert.deepEqual(reports.summary.cashAtOffice, { DKK: 680, EUR: 60 });
+    assert.ok(reports.ledger.some(item=>item.kind==='revenue'&&item.source==='passenger'&&item.signedAmount>0));
+    assert.ok(reports.ledger.some(item=>item.kind==='expense'&&item.sourceId===driverCashExpense.id&&item.signedAmount<0));
+    assert.ok(reports.ledger.some(item=>item.kind==='transfer'&&item.signedAmount===0));
+    assert.ok(reports.ledger.some(item=>item.kind==='settlement'&&item.signedAmount===0));
 
     const adminDashboard = (await expectStatus(baseUrl, 200, '/api/dashboard', { cookie: admin })).value;
     assert.equal(adminDashboard.cashHeld.payments, 0);
@@ -549,6 +559,8 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(cancelledTrip.cancellationReason, 'Afgangen er aflyst af driften');
     assert.equal(cancelledTrip.cancelledByName, 'Administrator');
     assert.ok(cancelledTrip.cancelledAt);
+    const cancellationDrafts=(await expectStatus(baseUrl,200,`/api/trips/${trip.id}`,{cookie:admin})).value.notifications.filter(item=>item.type==='trip_cancelled');
+    assert.ok(cancellationDrafts.length>0);
     await expectStatus(baseUrl, 409, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Efter annullering', phone: '10101010', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'unpaid', seatNumber: 5 } });
     await expectStatus(baseUrl, 409, `/api/trips/${trip.id}/passengers`, { method: 'PATCH', cookie: driver, body: { id: unpaidPassenger.id, checkedIn: true } });
     await expectStatus(baseUrl, 409, `/api/trips/${trip.id}`, { method: 'DELETE', cookie: admin });
@@ -566,6 +578,12 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(blockedDriverListClosure.value.blockers.passengers[0].name,'Afslutningstest');
     await expectStatus(baseUrl,403,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:sales,body:{passengerListClosed:true}});
     await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}/passengers`,{method:'PATCH',cookie:driver,body:{id:closurePassenger.id,attendanceStatus:'no_show'}});
+    const boardingTrip=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{operationalAction:'start_boarding'}})).value;
+    assert.equal(boardingTrip.operationalPhase,'boarding');
+    await expectStatus(baseUrl,409,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{operationalAction:'start_trip'}});
+    for(const departureChecklistItem of ['vehicle_ready','route_documents','passenger_list','baggage_secured','cash_budget'])await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{departureChecklistItem,checked:true}});
+    const startedTrip=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{operationalAction:'start_trip'}})).value;
+    assert.equal(startedTrip.operationalPhase,'underway');
     const closedPassengerList=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{passengerListClosed:true,note:'Alle passagerer behandlet'}})).value;
     assert.ok(closedPassengerList.passengerListClosedAt);
     assert.equal(closedPassengerList.passengerListClosedByName,'Mads Chauffør');
@@ -573,6 +591,8 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     const reopenedPassengerList=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{cookie:driver})).value;
     assert.equal(reopenedPassengerList.trip.passengerListClosedAt,null);
     await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{passengerListClosed:true,note:'Genkontrolleret efter rettelse'}});
+    const arrivedTrip=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{operationalAction:'mark_arrived'}})).value;
+    assert.equal(arrivedTrip.operationalPhase,'finance_pending');
     const completedTrip=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:admin,body:{status:'completed',closeNote:'Alle poster er kontrolleret'}})).value;
     assert.equal(completedTrip.status,'completed');
     assert.ok(completedTrip.economyLockedAt);
