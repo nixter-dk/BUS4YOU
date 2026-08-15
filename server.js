@@ -891,10 +891,29 @@ async function api(req, res, pathname) {
       baggage: db.baggage.some(record => record.tripId === trip.id),
       expenses: db.expenses.some(record => record.tripId === trip.id),
       settlements: db.cashSettlements.some(record => record.tripId === trip.id),
-      transfers: db.cashTransfers.some(record => record.tripId === trip.id)
+      transfers: db.cashTransfers.some(record => record.tripId === trip.id),
+      budgetEntries: (db.cashBudgetEntries || []).some(record => record.tripId === trip.id)
     };
-    if (Object.values(linked).some(Boolean)) return fail(res,409,'Turen har registrerede passagerer, bagage, udgifter eller kontantafstemninger og skal derfor annulleres i stedet');
-    audit(user,'trip.deleted','trip',trip.id,trip.id,{title:trip.title});db.notificationDrafts=db.notificationDrafts.filter(record=>record.tripId!==trip.id);db.trips = db.trips.filter(record => record.id !== trip.id); await saveDb(); return json(res,200,{ok:true});
+    const hasLinkedRecords=Object.values(linked).some(Boolean);
+    if (hasLinkedRecords && trip.status !== 'cancelled') return fail(res,409,'Turen har registrerede data og skal annulleres, før den kan slettes');
+    let deletionReason='Tom tur oprettet ved en fejl';
+    if (hasLinkedRecords) {
+      const data=await body(req),confirmation=String(data.confirmation||'').trim().toUpperCase();
+      deletionReason=String(data.deletionReason||'').trim();
+      if(confirmation!=='SLET')return fail(res,409,'Skriv SLET for at bekræfte permanent sletning');
+      if(deletionReason.length<3)return fail(res,400,'Skriv kort, hvorfor den annullerede tur slettes');
+    }
+    const directPassengers=db.passengers.filter(record=>record.tripId===trip.id),directPassengerIds=new Set(directPassengers.map(record=>record.id)),removePassengerIds=new Set(directPassengerIds);
+    for(const passenger of directPassengers){
+      if(passenger.returnPassengerId){const linkedReturn=db.passengers.find(record=>record.id===passenger.returnPassengerId);if(linkedReturn)removePassengerIds.add(linkedReturn.id)}
+      if(passenger.outboundPassengerId){const outbound=db.passengers.find(record=>record.id===passenger.outboundPassengerId&&!directPassengerIds.has(record.id));if(outbound){outbound.ticketType='return_open';outbound.returnStatus='open';outbound.returnTripId=null;outbound.returnPassengerId=null;outbound.openReturnValidUntil=outbound.openReturnValidUntil||new Date(new Date().setFullYear(new Date().getFullYear()+1)).toISOString()}}
+    }
+    for(const passenger of db.passengers)if(passenger.outboundPassengerId&&directPassengerIds.has(passenger.outboundPassengerId))removePassengerIds.add(passenger.id);
+    const removedPassengers=db.passengers.filter(record=>removePassengerIds.has(record.id)),removedBaggage=db.baggage.filter(record=>record.tripId===trip.id),removedExpenses=db.expenses.filter(record=>record.tripId===trip.id),removedSettlements=db.cashSettlements.filter(record=>record.tripId===trip.id),removedTransfers=db.cashTransfers.filter(record=>record.tripId===trip.id),removedTransferIds=new Set(removedTransfers.map(record=>record.id)),removedBudgetEntries=(db.cashBudgetEntries||[]).filter(record=>record.tripId===trip.id||removedTransferIds.has(record.transferId)),removedNotifications=db.notificationDrafts.filter(record=>record.tripId===trip.id),filesToRemove=[...removedBaggage.map(record=>record.photoFile),...removedExpenses.map(record=>record.receiptFile)].filter(Boolean);
+    const summary={title:trip.title,reason:deletionReason,status:trip.status,passengers:removedPassengers.length,baggage:removedBaggage.length,expenses:removedExpenses.length,settlements:removedSettlements.length,transfers:removedTransfers.length,budgetEntries:removedBudgetEntries.length,notifications:removedNotifications.length};
+    audit(user,'trip.deleted','trip',trip.id,trip.id,summary);
+    db.passengers=db.passengers.filter(record=>!removePassengerIds.has(record.id));db.baggage=db.baggage.filter(record=>record.tripId!==trip.id);db.expenses=db.expenses.filter(record=>record.tripId!==trip.id);db.cashSettlements=db.cashSettlements.filter(record=>record.tripId!==trip.id);db.cashTransfers=db.cashTransfers.filter(record=>record.tripId!==trip.id);db.cashBudgetEntries=(db.cashBudgetEntries||[]).filter(record=>record.tripId!==trip.id&&!removedTransferIds.has(record.transferId));db.notificationDrafts=db.notificationDrafts.filter(record=>record.tripId!==trip.id);db.trips=db.trips.filter(record=>record.id!==trip.id);
+    await saveDb();filesToRemove.forEach(removeStoredFile);return json(res,200,{ok:true,deleted:summary});
   }
   if (!part && req.method === 'PATCH') {
     const data = await body(req);

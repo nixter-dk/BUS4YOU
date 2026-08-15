@@ -632,6 +632,17 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     const salesCashboxWithReceipt=(await expectStatus(baseUrl,200,'/api/my-cashbox',{cookie:otherSales})).value;
     assert.ok(salesCashboxWithReceipt.forwardedExpenses.some(item=>item.id===forwardedExpense.id&&item.receiptFile));
 
+    await expectStatus(baseUrl,403,`/api/trips/${trip.id}`,{method:'DELETE',cookie:driver,body:{confirmation:'SLET',deletionReason:'Test af rollebeskyttelse'}});
+    await expectStatus(baseUrl,409,`/api/trips/${trip.id}`,{method:'DELETE',cookie:admin,body:{confirmation:'forkert',deletionReason:'Test af bekræftelse'}});
+    const deletedCancelledTrip=(await expectStatus(baseUrl,200,`/api/trips/${trip.id}`,{method:'DELETE',cookie:admin,body:{confirmation:'SLET',deletionReason:'Den annullerede testtur skal ryddes permanent'}})).value;
+    assert.equal(deletedCancelledTrip.ok,true);
+    assert.ok(deletedCancelledTrip.deleted.passengers>0);
+    assert.ok(deletedCancelledTrip.deleted.baggage>0);
+    assert.ok(deletedCancelledTrip.deleted.expenses>0);
+    await expectStatus(baseUrl,404,`/api/trips/${trip.id}`,{cookie:admin});
+    const deletionAudit=(await expectStatus(baseUrl,200,`/api/audit?tripId=${trip.id}`,{cookie:admin})).value;
+    assert.ok(deletionAudit.events.some(event=>event.action==='trip.deleted'&&event.details.reason==='Den annullerede testtur skal ryddes permanent'));
+
     const ownAdminProfile=(await expectStatus(baseUrl,200,'/api/profile',{method:'PATCH',cookie:admin,body:{email:'administrator-ny@albaturist.dk',currentPassword:'admin123',newPassword:'administratorens-nye-kode'}})).value;
     assert.equal(ownAdminProfile.user.email,'administrator-ny@albaturist.dk');
     await expectStatus(baseUrl, 200, '/api/logout', { method: 'POST', cookie: admin });
@@ -684,6 +695,8 @@ test('responsive check-in controls stay inside the visible workspace', () => {
   assert.doesNotMatch(html, /name="basePrice"/);
   assert.match(app, /data-delete-record="\$\{kind\}:\$\{id\}"/);
   assert.match(app, /method:'DELETE',body:JSON\.stringify\(\{id,deletionReason:reason\}\)/);
+  assert.match(app, /Slet annulleret tur/);
+  assert.match(app, /confirmation:form\.confirmation\.value,deletionReason/);
   assert.match(styles, /\.deletion-zone\{/);
   assert.match(styles, /@media\(max-width:700px\).*\.checkin-actions\{display:none!important\}/s);
   assert.match(styles, /\.checkin-card\{grid-template-columns:62px minmax\(180px,1fr\)\}\.checkin-payment,\.checkin-actions\{display:none!important\}/);
