@@ -39,6 +39,9 @@ test('Bootstrap Icons are loaded and applied to dynamic BusOps controls', () => 
   assert.match(icons, /function applyBootstrapLegacyIcons\(\)/);
   assert.match(icons, /function replaceBusOpsIcon\(/);
   assert.match(icons, /bi-ticket-perforated-fill/);
+  assert.match(icons, /data-driver-sales-tab/);
+  assert.match(icons, /#driverTicketShortcut > b/);
+  assert.match(icons, /#driverBaggageShortcut > b/);
   assert.match(icons, /bi-three-dots/);
   assert.match(icons, /bi-shield-check/);
   assert.match(icons, /bootstrap-cash-flow-arrow/);
@@ -57,6 +60,8 @@ test('Bootstrap Icons are loaded and applied to dynamic BusOps controls', () => 
   assert.match(icons, /dashboard-all-clear/);
   assert.match(icons, /dashboard-all-clear-status/);
   assert.match(icons, /function enhanceBootstrapOperationsCalendar\(\)/);
+  assert.match(icons, /function applyBootstrapStopWorkspace\(\)/);
+  assert.match(icons, /\.stop-management-hero/);
   assert.match(icons, /bootstrapCalendarInitialized/);
   assert.match(icons, /bootstrap-calendar-filter-toggle/);
   assert.match(icons, /ops-week-card-meta/);
@@ -65,6 +70,7 @@ test('Bootstrap Icons are loaded and applied to dynamic BusOps controls', () => 
   assert.match(css, /\.nav>\.nav-bi/);
   assert.match(css, /\.bootstrap-app\{/);
   assert.match(css, /\.bootstrap-dialog/);
+  assert.match(css, /\.bootstrap-app \[hidden\]\{display:none!important\}/);
   assert.match(css, /\.bootstrap-trip-hero\{/);
   assert.match(css, /\.trip-hero-status/);
   assert.match(css, /\.bootstrap-info-board\{/);
@@ -90,11 +96,19 @@ test('Bootstrap Icons are loaded and applied to dynamic BusOps controls', () => 
   assert.match(css, /grid-template-columns:42px minmax\(0,1fr\) 28px/);
   assert.match(css, /Fælles Bootstrap Icons/);
   assert.match(css, /\.bootstrap-cash-flow-arrow/);
+  assert.match(css, /Stoppesteder og live-tidslinje/);
+  assert.match(css, /\.stop-management-shell/);
+  assert.match(css, /\.live-route-track/);
+  assert.match(css, /\.live-bus-marker/);
   assert.doesNotMatch(html, /data-view="(?:dashboard|calendar|stops)"[^>]*>[▦□⌖]/);
   assert.doesNotMatch(app, /Nav\.innerHTML='[♙◫¤▰♟◈⚙]/);
   assert.match(app, /pictureTripInfo\(\).*bi-calendar-event-fill/);
   assert.match(app, /bi-geo-alt-fill/);
   assert.match(app, /bi-bus-front-fill/);
   assert.match(app, /bi-people-fill/);
+  assert.match(app, /function renderStopsWorkspace\(\)/);
+  assert.match(app, /function tripLiveState\(/);
+  assert.match(app, /Estimeret ud fra tidstabellen/);
+  assert.match(app, /bi-broadcast-pin/);
   assert.doesNotMatch(app, /pictureTripInfo\(\).*<i>□<\/i>/);
 });

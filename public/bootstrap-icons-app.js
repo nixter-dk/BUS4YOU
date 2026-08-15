@@ -652,7 +652,11 @@ function applyBootstrapLegacyIcons() {
     ['.trip-expense-folder-icon', 'bi-folder-fill'],
     ['.trip-expense-folder > i', 'bi-check-circle-fill'],
     ['.trip-expense-empty > span', 'bi-check-circle-fill'],
-    ['.picture-bus-icon', 'bi-bus-front-fill']
+    ['.picture-bus-icon', 'bi-bus-front-fill'],
+    ['#driverTicketShortcut > b', 'bi-ticket-perforated-fill'],
+    ['#driverTicketShortcut > i', 'bi-arrow-right'],
+    ['#driverBaggageShortcut > b', 'bi-luggage-fill'],
+    ['#driverBaggageShortcut > i', 'bi-arrow-right']
   ];
   iconHosts.forEach(([selector, iconName]) => document.querySelectorAll(selector).forEach(host => replaceBusOpsIcon(host, iconName)));
 
@@ -743,6 +747,13 @@ function applyBootstrapLegacyIcons() {
   });
 }
 
+function applyBootstrapStopWorkspace() {
+  addBusOpsClasses('.stop-management-hero,.stop-create-drawer,.stop-places-view,.stop-timetable-view,.live-trip-panel,.trip-live-route', 'card', 'border-0', 'shadow-sm', 'rounded-4');
+  addBusOpsClasses('.stop-place-card,.stop-timetable-card', 'card', 'border-0', 'rounded-4');
+  document.querySelectorAll('.stop-management-shell button,.trip-live-route button,.live-trip-panel button').forEach(button => button.classList.add('btn'));
+  document.querySelectorAll('.stop-management-shell .bi,.trip-live-route .bi,.live-trip-panel .bi').forEach(icon => icon.setAttribute('aria-hidden', 'true'));
+}
+
 function applyBusOpsBootstrapIcons() {
   applyBootstrapFoundation();
   document.querySelectorAll('.nav[data-view]').forEach(button => {
@@ -772,7 +783,8 @@ function applyBusOpsBootstrapIcons() {
 
   document.querySelectorAll('.tab').forEach(tab => {
     let iconName = '';
-    if (tab.dataset.tab) iconName = busOpsTabIcons[tab.dataset.tab] || '';
+    if (tab.hasAttribute('data-driver-sales-tab')) iconName = 'bi-ticket-perforated-fill';
+    else if (tab.dataset.tab) iconName = busOpsTabIcons[tab.dataset.tab] || '';
     else if (tab.hasAttribute('data-checkin-tab')) iconName = busOpsTabIcons.checkin;
     else if (tab.hasAttribute('data-expense-tab')) iconName = busOpsTabIcons.expenses;
     else if (tab.hasAttribute('data-settlement-tab')) iconName = busOpsTabIcons.settlement;
@@ -800,7 +812,7 @@ function applyBusOpsBootstrapIcons() {
     if (!host.querySelector('.bi')) host.replaceChildren(busOpsIcon('bi-chevron-right'));
   });
   document.querySelectorAll('.checkin-name-trigger>i').forEach(host => {
-    if (!host.querySelector('.bi')) host.replaceChildren(busOpsIcon('bi-chevron-right'));
+    if (!host.classList.contains('bi') && !host.querySelector('.bi')) host.replaceChildren(busOpsIcon('bi-chevron-right'));
   });
 
   prependBusOpsIcon(document.querySelector('#clearPassengerFilters'), 'bi-arrow-counterclockwise');
@@ -832,6 +844,7 @@ function applyBusOpsBootstrapIcons() {
   applyBootstrapExpenseFolder();
   applyBootstrapDashboard();
   applyBootstrapEconomyDashboard();
+  applyBootstrapStopWorkspace();
   applyBootstrapLegacyIcons();
 }
 

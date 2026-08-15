@@ -116,3 +116,12 @@ test('production mode enforces secure startup, origin checks and persistent sess
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the client clears protected trip data when a session expires', () => {
+  const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+  assert.match(app, /function showExpiredSession\(/);
+  assert.match(app, /\$\('#view'\)\.replaceChildren\(\)/);
+  assert.match(app, /Object\.assign\(state,\{user:null,trips:\[\],stops:\[\],drivers:\[\],salesManagers:\[\],buses:\[\],trip:null/);
+  assert.match(app, /r\.status===401&&url!==['"]\/api\/login['"]/);
+  assert.match(app, /if\(element\.textContent===msg\)element\.textContent=''/);
+});
