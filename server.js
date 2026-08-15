@@ -495,7 +495,7 @@ async function api(req, res, pathname) {
   if (pathname === '/api/me') return json(res, 200, { user: cleanUser(user) });
   if (pathname === '/api/bootstrap') {
     const trips = db.trips.filter(t => allowedTrip(user, t)).map(tripView);
-    return json(res, 200, { user: cleanUser(user), branding:{hasLogo:Boolean(db.settings?.logoFile),logoName:db.settings?.logoName||null}, trips, stops: db.stops, drivers: ['admin','sales_manager'].includes(user.role) ? db.users.filter(u => u.role === 'driver').map(cleanUser) : [], salesManagers: ['admin','driver'].includes(user.role) ? db.users.filter(u => u.role === 'sales_manager').map(cleanUser) : [], buses: user.role === 'admin' ? db.buses : [] });
+    return json(res, 200, { user: cleanUser(user), branding:{hasLogo:Boolean(db.settings?.logoFile),logoName:db.settings?.logoName||null}, trips, stops: db.stops, drivers: ['admin','sales_manager'].includes(user.role) ? db.users.filter(u => u.role === 'driver').map(cleanUser) : [], salesManagers: ['admin','driver'].includes(user.role) ? db.users.filter(u => u.role === 'sales_manager').map(cleanUser) : [], buses: ['admin','sales_manager'].includes(user.role) ? db.buses : [] });
   }
   if(pathname==='/api/dashboard'&&req.method==='GET'){
     const visibleTrips=db.trips.filter(trip=>allowedTrip(user,trip)),tripIds=new Set(visibleTrips.map(trip=>trip.id)),passengers=db.passengers.filter(record=>tripIds.has(record.tripId)),baggage=db.baggage.filter(record=>tripIds.has(record.tripId)),expenses=db.expenses.filter(record=>tripIds.has(record.tripId));
@@ -704,7 +704,7 @@ async function api(req, res, pathname) {
     return fail(res, 405, 'Handlingen er ikke tilladt');
   }
   if (pathname === '/api/trips' && req.method === 'POST') {
-    if (user.role !== 'admin') return fail(res, 403, 'Kun administratoren kan oprette ture');
+    if (!['admin','sales_manager'].includes(user.role)) return fail(res, 403, 'Kun administratorer og salgschefer kan oprette ture');
     const data = await body(req); if (!data.title || !data.departureAt || !data.destinationArrivalAt || !data.originId || !data.destinationId || !data.primaryDriverId || !data.busId) return fail(res, 400, 'Udfyld turens obligatoriske felter, inklusive forventet ankomst ved slutstedet');
     const origin = db.stops.find(stop => stop.id === Number(data.originId));
     if (!isFixedStartPoint(origin)) return fail(res, 400, 'Turens startpunkt skal være København eller Tetovo');
@@ -714,7 +714,7 @@ async function api(req, res, pathname) {
     const primaryDriver=db.users.find(candidate=>candidate.id===Number(data.primaryDriverId)&&candidate.role==='driver'),secondaryDriver=data.secondaryDriverId?db.users.find(candidate=>candidate.id===Number(data.secondaryDriverId)&&candidate.role==='driver'):null;
     if(!primaryDriver||(data.secondaryDriverId&&!secondaryDriver))return fail(res,400,'Vælg gyldige chauffører fra chaufførregisteret');
     const bus = db.buses.find(b => b.id === Number(data.busId)); if (!bus) return fail(res, 400, 'Vælg en gyldig bus');
-    const salesManagerId=data.salesManagerId?Number(data.salesManagerId):null;if(salesManagerId&&!db.users.some(candidate=>candidate.id===salesManagerId&&candidate.role==='sales_manager'))return fail(res,400,'Vælg en gyldig salgschef');
+    const salesManagerId=user.role==='sales_manager'?user.id:data.salesManagerId?Number(data.salesManagerId):null;if(salesManagerId&&!db.users.some(candidate=>candidate.id===salesManagerId&&candidate.role==='sales_manager'))return fail(res,400,'Vælg en gyldig salgschef');
     const departureAt = new Date(data.departureAt);if(Number.isNaN(departureAt.getTime()))return fail(res,400,'Vælg en gyldig afgangstid');
     const destinationAt = new Date(data.destinationArrivalAt);if(Number.isNaN(destinationAt.getTime()))return fail(res,400,'Vælg en gyldig forventet ankomsttid ved slutstedet');
     if(destinationAt<=departureAt)return fail(res,400,'Ankomsten ved slutstedet skal ligge efter afgangen fra startstedet');

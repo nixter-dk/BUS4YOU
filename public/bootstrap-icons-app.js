@@ -613,8 +613,8 @@ function applyBootstrapDashboard() {
   });
   document.querySelectorAll('.dashboard-quick-panel [data-sales-expense-quick]').forEach(button => {
     button.classList.add('bootstrap-dashboard-quick-action');
-    const iconHost = button.querySelector(':scope > i');
-    if (iconHost && !iconHost.querySelector('.bi')) iconHost.replaceChildren(busOpsIcon('bi-receipt'));
+    const iconHost = button.querySelector(':scope > span:first-child');
+    if (iconHost && !iconHost.querySelector('.bi')) iconHost.replaceChildren(busOpsIcon('bi-receipt-cutoff'));
     const arrow = button.querySelector(':scope > b');
     if (arrow && !arrow.querySelector('.bi')) arrow.replaceChildren(busOpsIcon('bi-chevron-right'));
   });

@@ -55,6 +55,8 @@ test('Bootstrap Icons are loaded and applied to dynamic BusOps controls', () => 
   assert.match(icons, /bootstrap-expense-add/);
   assert.match(icons, /bootstrap-dashboard-action-card/);
   assert.match(icons, /data-sales-expense-quick/);
+  assert.match(app, /data-sales-expense-quick[^>]*>[\s\S]*?bi-receipt-cutoff/);
+  assert.match(icons, /bi-receipt-cutoff/);
   assert.match(icons, /bi-person-badge/);
   assert.match(icons, /bi-graph-up/);
   assert.match(icons, /dashboard-all-clear/);
