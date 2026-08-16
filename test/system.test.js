@@ -229,6 +229,12 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(fixedReturn.returnPassenger.paymentStatus, 'return_included');
     assert.match(fixedReturn.bookingNumber,/^ALB-\d{4}-\d{6}$/);
     assert.equal(fixedReturn.returnPassenger.bookingNumber,fixedReturn.bookingNumber);
+    const fixedReturnPdf=await expectStatus(baseUrl,200,`/api/bookings/${encodeURIComponent(fixedReturn.bookingNumber)}/ticket.pdf?download=1&reprint=1`,{cookie:admin});
+    assert.equal(fixedReturnPdf.response.headers.get('content-type'),'application/pdf');
+    assert.match(fixedReturnPdf.response.headers.get('content-disposition')||'',/attachment/);
+    assert.equal(fixedReturnPdf.value.subarray(0,8).toString(),'%PDF-1.4');
+    assert.ok(fixedReturnPdf.value.length>1500);
+    await expectStatus(baseUrl,403,`/api/bookings/${encodeURIComponent(fixedReturn.bookingNumber)}/ticket.pdf`,{cookie:spare});
     const duplicateWarning=await expectStatus(baseUrl,409,`/api/trips/${trip.id}/passengers`,{method:'POST',cookie:admin,body:{name:'Fast returpassager',phone:'10101010',pickupStopId:origin.id,destinationStopId:destination.id,paymentStatus:'unpaid',seatNumber:79}});
     assert.equal(duplicateWarning.value.duplicateWarning,true);
     assert.equal(duplicateWarning.value.duplicates[0].bookingNumber,fixedReturn.bookingNumber);
@@ -285,6 +291,19 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: admin, body: { id: partyRecords[0].id, deletionReason: 'Fjerner sidste gruppemedlem' } });
 
     const unpaidPassenger = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Betaler i Danmark', ticketNumber: 'TEST-001', phone: '11111111', pickupStopId: extraStop.id, destinationStopId: destination.id, paymentStatus: 'pay_dk', seatNumber: 23 } })).value;
+    const offlineCreate={name:'Offline idempotent',phone:'11111113',pickupStopId:origin.id,destinationStopId:destination.id,paymentStatus:'unpaid',seatNumber:24,clientActionId:'offline-create-test-1'};
+    const offlineCreated=(await expectStatus(baseUrl,201,`/api/trips/${trip.id}/passengers`,{method:'POST',cookie:admin,body:offlineCreate})).value;
+    const offlineReplayed=(await expectStatus(baseUrl,201,`/api/trips/${trip.id}/passengers`,{method:'POST',cookie:admin,body:offlineCreate})).value;
+    assert.equal(offlineReplayed.id,offlineCreated.id);
+    assert.equal((await expectStatus(baseUrl,200,`/api/trips/${trip.id}`,{cookie:admin})).value.passengers.filter(item=>item.name==='Offline idempotent').length,1);
+    const offlineChecked=(await expectStatus(baseUrl,200,`/api/trips/${trip.id}/passengers`,{method:'PATCH',cookie:admin,body:{id:offlineCreated.id,checkedIn:true,clientActionId:'offline-check-test-1'}})).value;
+    const offlineCheckReplay=(await expectStatus(baseUrl,200,`/api/trips/${trip.id}/passengers`,{method:'PATCH',cookie:admin,body:{id:offlineCreated.id,checkedIn:true,clientActionId:'offline-check-test-1'}})).value;
+    assert.equal(offlineCheckReplay.attendanceHistory.length,offlineChecked.attendanceHistory.length);
+    await expectStatus(baseUrl,200,`/api/trips/${trip.id}/passengers`,{method:'DELETE',cookie:admin,body:{id:offlineCreated.id,deletionReason:'Fjerner offline-idempotens-test'}});
+    await expectStatus(baseUrl,200,'/api/offline/status',{method:'POST',cookie:driver,body:{deviceId:'test-driver-device',pendingCount:2,conflictCount:1,label:'Testtelefon'}});
+    const dashboardWithOfflineAlert=(await expectStatus(baseUrl,200,'/api/dashboard',{cookie:admin})).value;
+    assert.ok(dashboardWithOfflineAlert.operationalAlerts.some(alert=>alert.id==='offline-actions'&&alert.severity==='critical'));
+    await expectStatus(baseUrl,200,'/api/offline/status',{method:'POST',cookie:driver,body:{deviceId:'test-driver-device',pendingCount:0,conflictCount:0,label:'Testtelefon'}});
     await expectStatus(baseUrl, 400, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Ukendt stoppested', phone: '11111112', pickupStopId: 999999, destinationStopId: destination.id, paymentStatus: 'unpaid', seatNumber: 24 } });
     assert.equal(unpaidPassenger.paymentStatus, 'pay_dk');
     assert.equal(unpaidPassenger.ticketNumber, 'TEST-001');

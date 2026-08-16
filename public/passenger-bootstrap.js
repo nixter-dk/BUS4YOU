@@ -240,6 +240,7 @@ function showBootstrapPassengerActionSheet(id) {
     passenger.phone ? `<a class="passenger-action-control btn call" href="tel:${esc(passenger.phone)}"><span class="passenger-action-control-icon"><i class="bi bi-telephone-fill" aria-hidden="true"></i></span><span><strong>Ring til passager</strong><small>${esc(passenger.phone)}</small></span><i class="bi bi-chevron-right passenger-action-chevron" aria-hidden="true"></i></a>` : '',
     !passenger.checkedIn && attendance !== 'no_show' ? passengerActionButton('noshow', 'bi-person-x-fill', 'Markér udeblevet', 'Passageren mødte ikke op', 'warning') : '',
     passenger.ticketType === 'return_open' && passenger.returnStatus === 'open' ? passengerActionButton('book-return', 'bi-arrow-left-right', 'Book åben retur', 'Vælg returtur og sæde', 'return') : '',
+    passenger.bookingNumber ? passengerActionButton('ticket-pdf', 'bi-file-earmark-pdf-fill', 'Hent PDF-billet', 'Vis, download eller genudskriv hele bookingen', 'ticket') : '',
     passengerActionButton('details', 'bi-card-list', 'Alle detaljer', 'Billet, betaling og hændelser'),
     passengerActionButton('edit', 'bi-pencil-square', 'Ret eller slet', 'Ret en fejl eller fjern passageren')
   ].filter(Boolean).join('');
@@ -281,6 +282,7 @@ function showBootstrapPassengerActionSheet(id) {
   $('[data-sheet-action="details"]')?.addEventListener('click', () => run(() => showPassengerDetail(id)));
   $('[data-sheet-action="edit"]')?.addEventListener('click', () => run(() => showPassengerCorrection(id)));
   $('[data-sheet-action="book-return"]')?.addEventListener('click', () => run(() => openReturnBookingDialog(passenger)));
+  $('[data-sheet-action="ticket-pdf"]')?.addEventListener('click', () => run(() => openTicketPdf(passenger.bookingNumber, true)));
   translateElement($('#modalBody'));
   dialog.addEventListener('close', () => dialog.classList.remove('bootstrap-passenger-action-dialog'), { once: true });
   dialog.showModal();
