@@ -2,11 +2,21 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { Readable } = require('stream');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
 const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'data', 'db.json');
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(path.dirname(DB_FILE), 'uploads');
+const FILE_STORAGE_BACKEND = ['local','mirror','r2'].includes(String(process.env.FILE_STORAGE_BACKEND || '').toLowerCase()) ? String(process.env.FILE_STORAGE_BACKEND).toLowerCase() : 'local';
+const R2_ACCOUNT_ID = String(process.env.R2_ACCOUNT_ID || '').trim();
+const R2_ACCESS_KEY_ID = String(process.env.R2_ACCESS_KEY_ID || '').trim();
+const R2_SECRET_ACCESS_KEY = String(process.env.R2_SECRET_ACCESS_KEY || '').trim();
+const R2_BUCKET = String(process.env.R2_BUCKET || '').trim();
+const R2_PREFIX = String(process.env.R2_PREFIX || 'busops').trim().replace(/^\/+|\/+$/g, '');
+const R2_JURISDICTION = String(process.env.R2_JURISDICTION || '').trim().toLowerCase().replace(/[^a-z0-9-]/g,'');
+const R2_CONFIGURED = Boolean(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET);
+let lastFileStorageError = null;
 const PUBLIC = path.join(__dirname, 'public');
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
@@ -216,16 +226,50 @@ const storageReady = initializeStorage();
 storageReady.catch(error => console.error('BusOps kunne ikke klargøre datalageret', error.message));
 function id() { db.meta.nextId += 1; return db.meta.nextId; }
 function cleanUser(user) { const { salt, passwordHash, portraitFile, ...safe } = user; return { ...safe, hasPortrait:Boolean(portraitFile) }; }
-function storeImage(data,{prefix,maxBytes=10*1024*1024}={}) {
+function storageError(message,statusCode=502){return Object.assign(new Error(message),{statusCode})}
+function r2ObjectKey(file){return [R2_PREFIX,path.basename(String(file||''))].filter(Boolean).map(part=>encodeURIComponent(part)).join('/')}
+function hmac(key,value,encoding){return crypto.createHmac('sha256',key).update(value).digest(encoding)}
+function sha256(value){return crypto.createHash('sha256').update(value).digest('hex')}
+async function r2Request(method,file,{bytes=null,type='application/octet-stream'}={}){
+  if(!R2_CONFIGURED)throw storageError('Cloudflare R2 er ikke fuldt konfigureret',503);
+  const now=new Date(),amzDate=now.toISOString().replace(/[:-]|\.\d{3}/g,''),dateStamp=amzDate.slice(0,8),host=`${R2_ACCOUNT_ID}${R2_JURISDICTION?`.${R2_JURISDICTION}`:''}.r2.cloudflarestorage.com`,canonicalUri=`/${encodeURIComponent(R2_BUCKET)}/${r2ObjectKey(file)}`,payload=bytes||Buffer.alloc(0),payloadHash=sha256(payload),signedHeaders='host;x-amz-content-sha256;x-amz-date';
+  const canonicalHeaders=`host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`,canonicalRequest=[method,canonicalUri,'',canonicalHeaders,signedHeaders,payloadHash].join('\n'),scope=`${dateStamp}/auto/s3/aws4_request`,stringToSign=['AWS4-HMAC-SHA256',amzDate,scope,sha256(canonicalRequest)].join('\n');
+  const dateKey=hmac(`AWS4${R2_SECRET_ACCESS_KEY}`,dateStamp),regionKey=hmac(dateKey,'auto'),serviceKey=hmac(regionKey,'s3'),signingKey=hmac(serviceKey,'aws4_request'),signature=hmac(signingKey,stringToSign,'hex');
+  const response=await fetch(`https://${host}${canonicalUri}`,{method,headers:{Authorization:`AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY_ID}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,'x-amz-content-sha256':payloadHash,'x-amz-date':amzDate,...(method==='PUT'?{'Content-Type':type}:{})},body:method==='PUT'?payload:undefined});
+  return response;
+}
+async function storeFile(file,bytes,type){
+  const safeFile=path.basename(file);
+  if(FILE_STORAGE_BACKEND!=='r2'){fs.mkdirSync(UPLOAD_DIR,{recursive:true});fs.writeFileSync(path.join(UPLOAD_DIR,safeFile),bytes)}
+  if(FILE_STORAGE_BACKEND!=='local'){
+    try{const response=await r2Request('PUT',safeFile,{bytes,type});if(!response.ok)throw storageError(`Cloudflare R2 afviste uploaden (${response.status})`);lastFileStorageError=null}
+    catch(error){lastFileStorageError={at:new Date().toISOString(),message:error.message};if(FILE_STORAGE_BACKEND==='r2')throw error;console.error('Cloudflare R2-spejling fejlede; den lokale kopi er bevaret:',error.message)}
+  }
+}
+async function removeStoredFile(file){
+  if(!file)return;
+  const safeFile=path.basename(file),target=path.join(UPLOAD_DIR,safeFile);
+  if(FILE_STORAGE_BACKEND!=='r2'&&fs.existsSync(target))fs.unlinkSync(target);
+  if(FILE_STORAGE_BACKEND!=='local'&&R2_CONFIGURED){try{const response=await r2Request('DELETE',safeFile);if(!response.ok&&response.status!==404)throw storageError(`Cloudflare R2 kunne ikke slette ${safeFile} (${response.status})`);lastFileStorageError=null}catch(error){lastFileStorageError={at:new Date().toISOString(),message:error.message};if(FILE_STORAGE_BACKEND==='r2')throw error;console.error(error.message)}}
+}
+async function serveStoredFile(res,file,type,name=null){
+  const safeFile=path.basename(file||'');if(!safeFile)return fail(res,404,'Filen findes ikke');
+  if(FILE_STORAGE_BACKEND!=='local'&&R2_CONFIGURED){
+    try{const response=await r2Request('GET',safeFile);if(response.ok){lastFileStorageError=null;res.writeHead(200,{'Content-Type':type||response.headers.get('content-type')||'application/octet-stream','Content-Disposition':name?`inline; filename*=UTF-8''${encodeURIComponent(name)}`:'inline','Cache-Control':'private, max-age=300','X-Content-Type-Options':'nosniff'});if(response.body)Readable.fromWeb(response.body).pipe(res);else res.end();return}if(response.status!==404)throw storageError(`Cloudflare R2 kunne ikke hente filen (${response.status})`)}
+    catch(error){lastFileStorageError={at:new Date().toISOString(),message:error.message};if(FILE_STORAGE_BACKEND==='r2')throw error;console.error('Cloudflare R2-læsning fejlede; prøver lokal kopi:',error.message)}
+  }
+  const target=path.join(UPLOAD_DIR,safeFile);if(!fs.existsSync(target))return fail(res,404,'Filen findes ikke');
+  res.writeHead(200,{'Content-Type':type||'application/octet-stream','Content-Disposition':name?`inline; filename*=UTF-8''${encodeURIComponent(name)}`:'inline','Cache-Control':'private, max-age=300','X-Content-Type-Options':'nosniff'});fs.createReadStream(target).pipe(res);
+}
+async function storeImage(data,{prefix,maxBytes=10*1024*1024}={}) {
   const type=String(data.type||''),name=path.basename(String(data.name||`${prefix}-billede`));
   if(!['image/jpeg','image/png','image/webp'].includes(type))throw Object.assign(new Error('Billedet skal være JPG, PNG eller WebP'),{statusCode:400});
   const encoded=String(data.data||'').replace(/^data:[^;]+;base64,/,'');const bytes=Buffer.from(encoded,'base64');
   if(!bytes.length||bytes.length>maxBytes)throw Object.assign(new Error('Billedet skal være mellem 1 byte og 10 MB'),{statusCode:400});
   const extension={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp'}[type],file=`${prefix}-${crypto.randomBytes(18).toString('hex')}${extension}`;
-  fs.mkdirSync(UPLOAD_DIR,{recursive:true});fs.writeFileSync(path.join(UPLOAD_DIR,file),bytes);return{file,type,name};
+  await storeFile(file,bytes,type);return{file,type,name};
 }
-function removeStoredFile(file){if(!file)return;const target=path.join(UPLOAD_DIR,path.basename(file));if(fs.existsSync(target))fs.unlinkSync(target)}
-function storedImage(res,file,type){const target=path.join(UPLOAD_DIR,path.basename(file||''));if(!file||!fs.existsSync(target))return fail(res,404,'Billedet findes ikke');res.writeHead(200,{'Content-Type':type||'application/octet-stream','Cache-Control':'private, max-age=300','X-Content-Type-Options':'nosniff'});fs.createReadStream(target).pipe(res)}
+async function storedImage(res,file,type){return serveStoredFile(res,file,type)}
 function userName(userId) { return userId ? db.users.find(user => user.id === userId)?.name || 'Ukendt medarbejder' : null; }
 function userHasOperationalHistory(userId) {
   return db.trips.some(trip=>[trip.primaryDriverId,trip.secondaryDriverId,trip.salesManagerId,trip.cancelledBy,trip.closedBy,trip.reopenedBy].includes(userId))
@@ -537,7 +581,7 @@ function cashRecordByReferenceAny(reference) {
   return record ? { kind,record,reference:`${kind}:${record.id}` } : null;
 }
 async function api(req, res, pathname) {
-  if (pathname === '/api/health' && req.method === 'GET') return json(res, 200, { ok: true, storage: DATABASE_URL ? 'postgresql' : 'json', time: new Date().toISOString() });
+  if (pathname === '/api/health' && req.method === 'GET') return json(res, 200, { ok: true, storage: DATABASE_URL ? 'postgresql' : 'json', fileStorage:{backend:FILE_STORAGE_BACKEND,r2Configured:R2_CONFIGURED,lastError:lastFileStorageError}, time: new Date().toISOString() });
   if(pathname==='/api/branding/logo'&&req.method==='GET')return storedImage(res,db.settings?.logoFile,db.settings?.logoType);
   if (pathname === '/api/login' && req.method === 'POST') {
     if (!loginAllowed(req)) return fail(res, 429, 'For mange loginforsøg. Vent 15 minutter og prøv igen');
@@ -577,8 +621,8 @@ async function api(req, res, pathname) {
   }
   if(pathname==='/api/branding'&&req.method==='PATCH'){
     if(user.role!=='admin')return fail(res,403,'Kun administratoren kan ændre appens logo');
-    const data=await body(req),image=storeImage({data:data.logoData,type:data.logoType,name:data.logoName},{prefix:'app-logo'}),oldFile=db.settings?.logoFile;
-    db.settings={...db.settings,logoFile:image.file,logoType:image.type,logoName:image.name};await saveDb();if(oldFile!==image.file)removeStoredFile(oldFile);return json(res,200,{hasLogo:true,logoName:image.name});
+    const data=await body(req),image=await storeImage({data:data.logoData,type:data.logoType,name:data.logoName},{prefix:'app-logo'}),oldFile=db.settings?.logoFile;
+    db.settings={...db.settings,logoFile:image.file,logoType:image.type,logoName:image.name};await saveDb();if(oldFile!==image.file)await removeStoredFile(oldFile);return json(res,200,{hasLogo:true,logoName:image.name});
   }
   if (pathname === '/api/me') return json(res, 200, { user: cleanUser(user) });
   if (pathname === '/api/bootstrap') {
@@ -724,7 +768,7 @@ async function api(req, res, pathname) {
     if (password.length < 12) return fail(res, 400, 'Adgangskoden skal være på mindst 12 tegn');
     if (db.users.some(u => u.email.toLowerCase() === email)) return fail(res, 409, 'E-mailadressen bruges allerede');
     const credentials = hashPassword(password);let portrait={file:null,type:null,name:null};
-    if(data.portraitData)portrait=storeImage({data:data.portraitData,type:data.portraitType,name:data.portraitName},{prefix:'driver'});
+    if(data.portraitData)portrait=await storeImage({data:data.portraitData,type:data.portraitType,name:data.portraitName},{prefix:'driver'});
     const driver = { id: id(), name, email, role: 'driver', salt: credentials.salt, passwordHash: credentials.hash, portraitFile:portrait.file,portraitType:portrait.type,portraitName:portrait.name };
     db.users.push(driver); await saveDb(); return json(res, 201, cleanUser(driver));
   }
@@ -765,14 +809,14 @@ async function api(req, res, pathname) {
       if (!name) return fail(res, 400, 'Udfyld chaufførens navn');
       if((data.email&&String(data.email).trim().toLowerCase()!==driver.email)||data.password)return fail(res,403,'Chaufføren skal selv ændre e-mail og adgangskode under Min konto');
       driver.name = name;
-      if(data.portraitData){const image=storeImage({data:data.portraitData,type:data.portraitType,name:data.portraitName},{prefix:'driver'}),oldFile=driver.portraitFile;driver.portraitFile=image.file;driver.portraitType=image.type;driver.portraitName=image.name;if(oldFile!==image.file)removeStoredFile(oldFile)}
+      if(data.portraitData){const image=await storeImage({data:data.portraitData,type:data.portraitType,name:data.portraitName},{prefix:'driver'}),oldFile=driver.portraitFile;driver.portraitFile=image.file;driver.portraitType=image.type;driver.portraitName=image.name;if(oldFile!==image.file)await removeStoredFile(oldFile)}
       await saveDb(); return json(res, 200, cleanUser(driver));
     }
     if (req.method === 'DELETE') {
       const assigned = db.trips.some(t => t.primaryDriverId === driver.id || t.secondaryDriverId === driver.id);
       if (assigned) return fail(res, 409, 'Chaufføren er tildelt en tur og kan derfor ikke slettes');
       if(userHasOperationalHistory(driver.id))return fail(res,409,'Chaufføren har registreret historik, betalinger eller udgifter og kan derfor ikke slettes');
-      removeStoredFile(driver.portraitFile);db.users = db.users.filter(u => u.id !== driver.id); await saveDb(); return json(res, 200, { ok: true });
+      await removeStoredFile(driver.portraitFile);db.users = db.users.filter(u => u.id !== driver.id); await saveDb(); return json(res, 200, { ok: true });
     }
     return fail(res, 405, 'Handlingen er ikke tilladt');
   }
@@ -848,7 +892,7 @@ async function api(req, res, pathname) {
     }
     if(data.receiptData){
       const expenseTrip=db.trips.find(trip=>trip.id===expense.tripId);if(!expenseTrip||!allowedTrip(user,expenseTrip)||(expense.expenseScope==='sales_preparation'&&user.role!=='admin'&&expense.createdBy!==user.id)||(user.role==='sales_manager'&&expense.createdBy!==user.id))return fail(res,403,'Du har ikke adgang til udgiften');
-      const receiptType=String(data.receiptType||''),receiptName=path.basename(String(data.receiptName||'kvittering'));if(!['image/jpeg','image/png','image/webp','application/pdf'].includes(receiptType))return fail(res,400,'Kvitteringen skal være PDF, JPG, PNG eller WebP');const encoded=String(data.receiptData).replace(/^data:[^;]+;base64,/,'');const fileData=Buffer.from(encoded,'base64');if(!fileData.length||fileData.length>5*1024*1024)return fail(res,400,'Kvitteringen skal være mellem 1 byte og 5 MB');const extensions={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','application/pdf':'.pdf'},receiptFile=`${crypto.randomBytes(18).toString('hex')}${extensions[receiptType]}`,uploadDir=UPLOAD_DIR;fs.mkdirSync(uploadDir,{recursive:true});fs.writeFileSync(path.join(uploadDir,receiptFile),fileData);expense.receiptType=receiptType;expense.receiptName=receiptName;expense.receiptFile=receiptFile;await saveDb();return json(res,200,{...expense,createdByName:userName(expense.createdBy),paidByName:userName(expense.paidByUserId||expense.createdBy),reviewedByName:userName(expense.reviewedBy)});
+      const receiptType=String(data.receiptType||''),receiptName=path.basename(String(data.receiptName||'kvittering'));if(!['image/jpeg','image/png','image/webp','application/pdf'].includes(receiptType))return fail(res,400,'Kvitteringen skal være PDF, JPG, PNG eller WebP');const encoded=String(data.receiptData).replace(/^data:[^;]+;base64,/,'');const fileData=Buffer.from(encoded,'base64');if(!fileData.length||fileData.length>5*1024*1024)return fail(res,400,'Kvitteringen skal være mellem 1 byte og 5 MB');const extensions={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','application/pdf':'.pdf'},receiptFile=`${crypto.randomBytes(18).toString('hex')}${extensions[receiptType]}`;await storeFile(receiptFile,fileData,receiptType);expense.receiptType=receiptType;expense.receiptName=receiptName;expense.receiptFile=receiptFile;await saveDb();return json(res,200,{...expense,createdByName:userName(expense.createdBy),paidByName:userName(expense.paidByUserId||expense.createdBy),reviewedByName:userName(expense.reviewedBy)});
     }
     if (user.role !== 'admin') return fail(res,403,'Kun administratoren kan godkende udgifter');
     if(data.reimbursementStatus==='paid'){
@@ -868,16 +912,14 @@ async function api(req, res, pathname) {
     const expenseTrip = db.trips.find(t => t.id === expense.tripId); if (!expenseTrip || (!allowedTrip(user,expenseTrip)&&expense.forwardedToSalesManagerId!==user.id)) return fail(res, 403, 'Du har ikke adgang til kvitteringen');
     if(expense.expenseScope==='sales_preparation'&&user.role!=='admin'&&expense.createdBy!==user.id)return fail(res,403,'Kun administratoren og salgschefen har adgang til dette forberedelsesbilag');
     if(user.role==='sales_manager'&&expense.createdBy!==user.id&&expense.forwardedToSalesManagerId!==user.id)return fail(res,403,'Du har kun adgang til dine egne eller videresendte udgiftsbilag');
-    const file = path.join(UPLOAD_DIR,expense.receiptFile); if (!fs.existsSync(file)) return fail(res, 404, 'Kvitteringsfilen findes ikke');
-    res.writeHead(200,{ 'Content-Type': expense.receiptType, 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(expense.receiptName)}` }); fs.createReadStream(file).pipe(res); return;
+    return serveStoredFile(res,expense.receiptFile,expense.receiptType,expense.receiptName);
   }
   const baggagePhotoMatch = pathname.match(/^\/api\/baggage\/(\d+)\/photo$/);
   if (baggagePhotoMatch && req.method === 'GET') {
     const item = db.baggage.find(candidate => candidate.id === Number(baggagePhotoMatch[1])); if (!item || !item.photoFile) return fail(res,404,'Bagagebilledet findes ikke');
     const photoTrip = db.trips.find(candidate => candidate.id === item.tripId); if (!photoTrip || !allowedTrip(user,photoTrip)) return fail(res,403,'Du har ikke adgang til bagagebilledet');
     if (user.role === 'sales_manager' && item.pickupStopId !== photoTrip.originId) return fail(res,403,'Salgschefen kan kun se bagage fra turens startsted');
-    const file = path.join(UPLOAD_DIR,item.photoFile); if (!fs.existsSync(file)) return fail(res,404,'Bagagebilledets fil findes ikke');
-    res.writeHead(200,{ 'Content-Type': item.photoType, 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(item.photoName)}` }); fs.createReadStream(file).pipe(res); return;
+    return serveStoredFile(res,item.photoFile,item.photoType,item.photoName);
   }
   const match = pathname.match(/^\/api\/trips\/(\d+)(?:\/(passengers|group-bookings|baggage|seats|expenses|settlements|transfers|notifications))?$/);
   if (!match) return fail(res, 404, 'Ikke fundet');
@@ -913,7 +955,7 @@ async function api(req, res, pathname) {
     const summary={title:trip.title,reason:deletionReason,status:trip.status,passengers:removedPassengers.length,baggage:removedBaggage.length,expenses:removedExpenses.length,settlements:removedSettlements.length,transfers:removedTransfers.length,budgetEntries:removedBudgetEntries.length,notifications:removedNotifications.length};
     audit(user,'trip.deleted','trip',trip.id,trip.id,summary);
     db.passengers=db.passengers.filter(record=>!removePassengerIds.has(record.id));db.baggage=db.baggage.filter(record=>record.tripId!==trip.id);db.expenses=db.expenses.filter(record=>record.tripId!==trip.id);db.cashSettlements=db.cashSettlements.filter(record=>record.tripId!==trip.id);db.cashTransfers=db.cashTransfers.filter(record=>record.tripId!==trip.id);db.cashBudgetEntries=(db.cashBudgetEntries||[]).filter(record=>record.tripId!==trip.id&&!removedTransferIds.has(record.transferId));db.notificationDrafts=db.notificationDrafts.filter(record=>record.tripId!==trip.id);db.trips=db.trips.filter(record=>record.id!==trip.id);
-    await saveDb();filesToRemove.forEach(removeStoredFile);return json(res,200,{ok:true,deleted:summary});
+    await saveDb();await Promise.all(filesToRemove.map(removeStoredFile));return json(res,200,{ok:true,deleted:summary});
   }
   if (!part && req.method === 'PATCH') {
     const data = await body(req);
@@ -1269,7 +1311,7 @@ async function api(req, res, pathname) {
     const photoType=String(data.photoType||''),photoName=path.basename(String(data.photoName||'bagagefoto'));if(!data.photoData)return fail(res,400,'Tag eller vælg et billede af bagagen');
     if(!['image/jpeg','image/png','image/webp'].includes(photoType))return fail(res,400,'Bagagebilledet skal være JPG, PNG eller WebP');
     const encodedPhoto=String(data.photoData).replace(/^data:[^;]+;base64,/,'');const photoData=Buffer.from(encodedPhoto,'base64');if(!photoData.length)return fail(res,400,'Bagagebilledet er tomt');
-    const photoExtensions={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp'},photoFile=`baggage-${crypto.randomBytes(18).toString('hex')}${photoExtensions[photoType]}`;fs.mkdirSync(UPLOAD_DIR,{recursive:true});fs.writeFileSync(path.join(UPLOAD_DIR,photoFile),photoData);
+    const photoExtensions={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp'},photoFile=`baggage-${crypto.randomBytes(18).toString('hex')}${photoExtensions[photoType]}`;await storeFile(photoFile,photoData,photoType);
     const paymentCurrency = ['DKK','EUR'].includes(data.paymentCurrency) ? data.paymentCurrency : 'DKK';
     const createdAt=new Date().toISOString();
     const item = { id: id(), tripId: trip.id, senderName: data.senderName.trim(), recipientName: data.recipientName.trim(), phone: data.phone.trim(), pickupStopId: Number(data.pickupStopId), destinationStopId: Number(data.destinationStopId), pieces, description: String(data.description || '').trim(), photoName, photoType, photoFile, paymentStatus: data.paymentStatus, paymentCurrency, cashAmount: data.paymentStatus === 'cash' ? Number(data.cashAmount || 0) : 0, paymentLocation: data.paymentStatus === 'cash' ? (user.role==='sales_manager'?'departure':user.role==='driver'?'bus':'shop') : null, paymentRecordedAt: data.paymentStatus === 'cash' ? createdAt : null, paymentRecordedBy: data.paymentStatus === 'cash' ? user.id : null, cashHolderUserId: data.paymentStatus === 'cash'&&['sales_manager','driver'].includes(user.role)?user.id:null, notes: String(data.notes || '').trim(), status: 'registered', createdAt, createdBy:user.id, statusUpdatedAt:createdAt, statusUpdatedBy:user.id, baggageHistory:[{action:'registered',at:createdAt,userId:user.id}] };
@@ -1282,7 +1324,7 @@ async function api(req, res, pathname) {
     const reason=String(data.deletionReason||'').trim();if(reason.length<3)return fail(res,400,'Skriv kort, hvorfor bagagen slettes');
     const reference=`baggage:${item.id}`;if(item.cashHandedOverAt||hasCashAuditReference(reference))return fail(res,409,'Bagagens betaling indgår i en kontantoverførsel eller afstemning og kan derfor ikke slettes');
     recordDeletion(trip,'baggage',item,user,reason);audit(user,'baggage.deleted','baggage',item.id,trip.id,{senderName:item.senderName,reason});db.baggage=db.baggage.filter(candidate=>candidate.id!==item.id);await saveDb();
-    if(item.photoFile){const photoPath=path.join(UPLOAD_DIR,path.basename(item.photoFile));try{if(fs.existsSync(photoPath))fs.unlinkSync(photoPath)}catch(error){console.error('Kunne ikke fjerne slettet bagagefoto:',error.message)}}
+    if(item.photoFile)await removeStoredFile(item.photoFile);
     return json(res,200,{ok:true});
   }
   if (part === 'baggage' && req.method === 'PATCH') {
@@ -1336,7 +1378,7 @@ async function api(req, res, pathname) {
     const paidByUser=db.users.find(candidate=>candidate.id===paidByUserId),cashBoxUserId=paymentMethod==='cash'&&['driver','sales_manager'].includes(paidByUser?.role)?paidByUserId:null,cashPaymentAllocations=cashBoxUserId?allocateCashExpense(trip.id,cashBoxUserId,currency,amount):[];
     if(cashBoxUserId&&!cashPaymentAllocations)return fail(res,409,'Der er ikke nok disponible kontanter i medarbejderens kasse til denne udgift');
     let receiptType=null,receiptName=null,receiptFile=null;
-    if(data.receiptData){receiptType=String(data.receiptType||'');receiptName=path.basename(String(data.receiptName||'kvittering'));if(!['image/jpeg','image/png','image/webp','application/pdf'].includes(receiptType))return fail(res,400,'Kvitteringen skal være PDF, JPG, PNG eller WebP');const encoded=String(data.receiptData).replace(/^data:[^;]+;base64,/,'');const fileData=Buffer.from(encoded,'base64');if(!fileData.length||fileData.length>5*1024*1024)return fail(res,400,'Kvitteringen skal være mellem 1 byte og 5 MB');const extensions={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','application/pdf':'.pdf'};receiptFile=`${crypto.randomBytes(18).toString('hex')}${extensions[receiptType]}`;const uploadDir=UPLOAD_DIR;fs.mkdirSync(uploadDir,{recursive:true});fs.writeFileSync(path.join(uploadDir,receiptFile),fileData);}
+    if(data.receiptData){receiptType=String(data.receiptType||'');receiptName=path.basename(String(data.receiptName||'kvittering'));if(!['image/jpeg','image/png','image/webp','application/pdf'].includes(receiptType))return fail(res,400,'Kvitteringen skal være PDF, JPG, PNG eller WebP');const encoded=String(data.receiptData).replace(/^data:[^;]+;base64,/,'');const fileData=Buffer.from(encoded,'base64');if(!fileData.length||fileData.length>5*1024*1024)return fail(res,400,'Kvitteringen skal være mellem 1 byte og 5 MB');const extensions={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','application/pdf':'.pdf'};receiptFile=`${crypto.randomBytes(18).toString('hex')}${extensions[receiptType]}`;await storeFile(receiptFile,fileData,receiptType);}
     const expense = { id:id(),tripId:trip.id,expenseDate:trip.departureAt,category,description:String(data.description||'').trim(),amount,currency,paymentMethod,paidByUserId,expenseScope:user.role==='sales_manager'?'sales_preparation':'trip_operation',cashBoxUserId,cashPaymentAllocations,receiptName,receiptType,receiptFile,createdAt:new Date().toISOString(),createdBy:user.id,status:'pending',reviewedAt:null,reviewedBy:null,reviewNote:'',reimbursementStatus:paymentMethod==='private'?'pending':'not_applicable',reimbursedAt:null,reimbursedBy:null };
     db.expenses.push(expense);audit(user,'expense.created','expense',expense.id,trip.id,{amount,currency,category,paymentMethod}); await saveDb(); return json(res,201,{...expense,createdByName:user.name,paidByName:userName(paidByUserId)});
   }
@@ -1423,4 +1465,4 @@ if (require.main === module) {
   server.listen(PORT, HOST, () => console.log(`BusOps kører på http://${HOST}:${PORT} med ${DATABASE_URL ? 'PostgreSQL' : 'JSON-lagring'}`));
   for (const signal of ['SIGTERM','SIGINT']) process.once(signal, () => shutdown(signal).finally(() => process.exit(0)));
 }
-module.exports = { server, seed, hashPassword, verifyPassword, seatMap, storageReady };
+module.exports = { server, seed, hashPassword, verifyPassword, seatMap, storageReady, fileStorage:{storeFile,removeStoredFile,r2Request,backend:FILE_STORAGE_BACKEND,r2Configured:R2_CONFIGURED} };

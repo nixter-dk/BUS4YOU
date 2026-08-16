@@ -27,6 +27,20 @@ services:
         value: 8
       - key: UPLOAD_DIR
         value: /data/uploads
+      - key: FILE_STORAGE_BACKEND
+        value: local
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_PREFIX
+        value: busops
+      - key: R2_JURISDICTION
+        value: eu
     disk:
       name: busops-files
       mountPath: /data

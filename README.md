@@ -97,6 +97,13 @@ render.yaml         Samlet Render-opsætning med web, database og fil-disk
 | `DB_FILE` | `data/db.json` | Placering af databasen |
 | `DATABASE_URL` | tom | PostgreSQL-forbindelse i produktion |
 | `UPLOAD_DIR` | `data/uploads` | Bagagebilleder og kvitteringer |
+| `FILE_STORAGE_BACKEND` | `local` | `local`, `mirror` eller `r2` |
+| `R2_ACCOUNT_ID` | tom | Cloudflare-kontoens Account ID |
+| `R2_ACCESS_KEY_ID` | tom | Adgangsnøgle til en privat R2-bucket |
+| `R2_SECRET_ACCESS_KEY` | tom | Hemmelig R2-adgangsnøgle |
+| `R2_BUCKET` | tom | Navnet på R2-bucketen |
+| `R2_PREFIX` | `busops` | Mappepræfiks til BusOps-filer |
+| `R2_JURISDICTION` | tom | `eu` for en bucket med EU-jurisdiktion |
 | `INITIAL_ADMIN_EMAIL` | lokal standardværdi | Første administrator i en tom database |
 | `INITIAL_ADMIN_PASSWORD` | lokal testværdi | Påkrævet i produktion, mindst 12 tegn |
 | `SESSION_TTL_HOURS` | `8` | Login-sessionens varighed |
@@ -137,5 +144,7 @@ Projektet er klargjort til en hostingudbyders HTTPS-adresse og behøver derfor i
 Den medfølgende `render.yaml` kan oprette webtjeneste, PostgreSQL og permanent fil-disk i Frankfurt. Render tildeler automatisk en `onrender.com`-adresse med HTTPS. Den permanente disk og en database til varig drift kræver en betalt opsætning.
 
 Bagagebilleder og kvitteringer skal ligge på en permanent disk. Database og disk skal sikkerhedskopieres separat. Den samlede trin-for-trin-tjekliste findes i `docs/production.md`.
+
+BusOps kan desuden spejle nye filer til en privat Cloudflare R2-bucket. Start altid med `FILE_STORAGE_BACKEND=mirror`, så Render-disken fortsat fungerer som sikkerhed. Se `docs/cloudflare-r2.md`.
 
 Ved en helt tom produktionsdatabase oprettes kun administratoren fra `INITIAL_ADMIN_EMAIL` og `INITIAL_ADMIN_PASSWORD`. Demo-chauffører oprettes aldrig i produktion.
