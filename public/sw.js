@@ -1,5 +1,5 @@
-const CACHE = 'busops-shell-20260816';
-const SHELL = ['/', '/index.html', '/styles.css', '/passenger-bootstrap.css', '/translations.js', '/offline.js', '/app.js', '/passenger-bootstrap.js', '/bootstrap-icons-app.js'];
+const CACHE = 'busops-shell-20260816-icons-local';
+const SHELL = ['/', '/index.html', '/styles.css', '/passenger-bootstrap.css', '/vendor/bootstrap-icons/bootstrap-icons.min.css', '/vendor/bootstrap-icons/fonts/bootstrap-icons.woff2', '/translations.js', '/offline.js', '/app.js', '/passenger-bootstrap.js', '/bootstrap-icons-app.js'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));

@@ -457,17 +457,20 @@ checkinCard=function(p){
 };
 
 // Combined search and one-touch filters make long passenger lists manageable.
-const checkInModeBeforeMobileWorkspace=renderCheckInMode;
-renderCheckInMode=function(){
-  checkInModeBeforeMobileWorkspace();
+// This helper is also called after the "all passengers" view replaces the card list.
+function setupCheckInListFilters(){
   const search=$('#checkinSearch'),sections=$('.checkin-sections');
   if(!search||!sections)return;
+  $('#tabContent .checkin-mobile-tools')?.remove();
   const cards=$$('[data-checkin-card]');
+  const visiblePassengers=state.checkInAllPassengers
+    ? state.trip.passengers
+    : state.trip.passengers.filter(passenger=>passenger.pickupStopId===Number(state.currentCheckinStop));
   const counts={
-    all:cards.length,
-    pending:cards.filter(card=>card.dataset.checkinState==='pending').length,
-    unpaid:cards.filter(card=>card.dataset.paymentState==='unpaid').length,
-    checked:cards.filter(card=>card.dataset.checkinState==='checked').length
+    all:visiblePassengers.length,
+    pending:visiblePassengers.filter(passenger=>!passenger.checkedIn&&passenger.attendanceStatus!=='no_show').length,
+    unpaid:visiblePassengers.filter(passenger=>isPendingPayment(passenger)).length,
+    checked:visiblePassengers.filter(passenger=>passenger.checkedIn).length
   };
   if(!['all','pending','unpaid','checked'].includes(state.checkInListFilter))state.checkInListFilter='pending';
   const tools=document.createElement('div');
@@ -511,6 +514,12 @@ renderCheckInMode=function(){
     });
   }));
   applyFilters();
+}
+
+const checkInModeBeforeMobileWorkspace=renderCheckInMode;
+renderCheckInMode=function(){
+  checkInModeBeforeMobileWorkspace();
+  setupCheckInListFilters();
 };
 
 // Advanced per-trip cash flow: ticket cash, baggage cash, expenses and custody.
@@ -1343,6 +1352,7 @@ renderCheckInMode=function(){
     const stopIds=[...new Set(state.trip.passengers.map(passenger=>passenger.pickupStopId))];wireCheckInMode(stopIds);
     $$('[data-passenger-actions]').forEach(button=>button.onclick=()=>showPassengerActionSheet(Number(button.dataset.passengerActions)));
     $$('[data-checkin-card]').forEach(card=>{const passenger=state.trip.passengers.find(item=>item.id===Number(card.dataset.checkinCard));if(passenger?.ticketNumber)card.dataset.search=`${card.dataset.search||''} ${passenger.ticketNumber.toLowerCase()}`});
+    setupCheckInListFilters();
   }
   select.onchange=event=>{state.checkInAllPassengers=event.target.value==='all';if(!state.checkInAllPassengers)state.currentCheckinStop=Number(event.target.value);renderTrip()};
 };

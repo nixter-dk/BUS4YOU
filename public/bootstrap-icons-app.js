@@ -98,8 +98,8 @@ function applyBootstrapFoundation() {
   document.querySelector('#toast')?.classList.add('bootstrap-toast', 'shadow-lg');
 
   const genericButtonIcons = [
-    ['[data-edit-stop],[data-edit-driver],[data-edit-sales-manager],.timetable-edit', 'bi-pencil-square'],
-    ['[data-delete-stop],[data-delete-driver],[data-delete-sales-manager],.delete-trip-button', 'bi-trash3-fill'],
+    ['[data-edit-stop],[data-edit-bus],[data-edit-driver],[data-edit-sales-manager],.timetable-edit', 'bi-pencil-square'],
+    ['[data-delete-stop],[data-delete-bus],[data-delete-driver],[data-delete-sales-manager],.delete-trip-button', 'bi-trash3-fill'],
     ['.cancel-trip-button', 'bi-x-circle-fill'],
     ['#closeTripButton', 'bi-lock-fill'],
     ['#auditTripButton', 'bi-clock-history'],
@@ -642,7 +642,6 @@ function applyBootstrapLegacyIcons() {
     ['.seat-picker-launcher > i', 'bi-chevron-right'],
     ['.booking-confirmation > i', 'bi-check-lg'],
     ['[data-remove-group-member]', 'bi-x-lg'],
-    ['.personal-login-lock > b', 'bi-receipt-cutoff'],
     ['.budget-transfer-privacy > b', 'bi-shield-check'],
     ['.transfer-recipient > i', 'bi-arrow-right'],
     ['.picture-extra-seat.selected > span', 'bi-check-lg'],
@@ -657,9 +656,49 @@ function applyBootstrapLegacyIcons() {
     ['#driverTicketShortcut > b', 'bi-ticket-perforated-fill'],
     ['#driverTicketShortcut > i', 'bi-arrow-right'],
     ['#driverBaggageShortcut > b', 'bi-luggage-fill'],
-    ['#driverBaggageShortcut > i', 'bi-arrow-right']
+    ['#driverBaggageShortcut > i', 'bi-arrow-right'],
+    ['.account-security-note > b', 'bi-shield-lock-fill'],
+    ['.driver-ticket-note > b', 'bi-cash-coin'],
+    ['.driver-baggage-note > b', 'bi-camera-fill'],
+    ['.bus-icon', 'bi-bus-front-fill'],
+    ['.stop-pin', 'bi-geo-alt-fill'],
+    ['.checkin-more > summary', 'bi-three-dots']
   ];
   iconHosts.forEach(([selector, iconName]) => document.querySelectorAll(selector).forEach(host => replaceBusOpsIcon(host, iconName)));
+
+  document.querySelectorAll('.personal-login-lock > b').forEach(host => {
+    replaceBusOpsIcon(host, host.textContent.includes('⌑') ? 'bi-receipt-cutoff' : 'bi-shield-lock-fill');
+  });
+
+  const lockedStatusHosts = [
+    '.assignment-lock',
+    '.trip-sales-assignment.locked > span',
+    '.delete-trip-locked',
+    '.trip-closed-banner > span'
+  ];
+  document.querySelectorAll(lockedStatusHosts.join(',')).forEach(host => {
+    removeDirectSymbol(host, /^\s*🔒\s*/u);
+    prependBusOpsIcon(host, 'bi-lock-fill', 'busops-lock-icon');
+  });
+
+  document.querySelectorAll('.picture-stars').forEach(host => {
+    if (host.querySelector('.bi')) return;
+    host.replaceChildren(...Array.from({ length: 4 }, () => busOpsIcon('bi-star-fill')));
+    host.setAttribute('aria-label', 'Fire stjerner');
+  });
+
+  document.querySelectorAll('.baggage-photo-link').forEach(link => {
+    removeDirectSymbol(link, /^\s*▣\s*/);
+    prependBusOpsIcon(link, 'bi-image-fill', 'busops-baggage-photo-icon');
+  });
+  document.querySelectorAll('.baggage-photo-missing').forEach(status => {
+    prependBusOpsIcon(status, 'bi-image-alt', 'busops-baggage-photo-icon');
+  });
+  document.querySelectorAll('.checkin-audit').forEach(status => {
+    removeDirectSymbol(status, /^\s*✓\s*/);
+    prependBusOpsIcon(status, 'bi-person-check-fill', 'busops-checkin-audit-icon');
+  });
+  document.querySelectorAll('.timetable-stop.completed > i').forEach(host => replaceBusOpsIcon(host, 'bi-check-lg'));
 
   document.querySelectorAll('.deck-title > span').forEach(host => {
     const deckLabel = host.parentElement?.textContent || '';
