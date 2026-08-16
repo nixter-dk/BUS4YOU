@@ -7,6 +7,7 @@ RUN npm ci --omit=dev --no-audit --no-fund
 
 COPY server.js ./
 COPY public ./public
+COPY scripts ./scripts
 
 RUN mkdir -p /app/data/uploads && chown -R node:node /app
 
