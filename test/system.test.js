@@ -227,6 +227,14 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(fixedReturn.returnPassenger.tripId, returnTrip.id);
     assert.equal(fixedReturn.returnPassenger.seatNumber, 12);
     assert.equal(fixedReturn.returnPassenger.paymentStatus, 'return_included');
+    assert.match(fixedReturn.bookingNumber,/^ALB-\d{4}-\d{6}$/);
+    assert.equal(fixedReturn.returnPassenger.bookingNumber,fixedReturn.bookingNumber);
+    const duplicateWarning=await expectStatus(baseUrl,409,`/api/trips/${trip.id}/passengers`,{method:'POST',cookie:admin,body:{name:'Fast returpassager',phone:'10101010',pickupStopId:origin.id,destinationStopId:destination.id,paymentStatus:'unpaid',seatNumber:79}});
+    assert.equal(duplicateWarning.value.duplicateWarning,true);
+    assert.equal(duplicateWarning.value.duplicates[0].bookingNumber,fixedReturn.bookingNumber);
+    const confirmedDuplicate=(await expectStatus(baseUrl,201,`/api/trips/${trip.id}/passengers`,{method:'POST',cookie:admin,body:{name:'Fast returpassager',phone:'10101010',pickupStopId:origin.id,destinationStopId:destination.id,paymentStatus:'unpaid',seatNumber:79,confirmDuplicate:true}})).value;
+    assert.notEqual(confirmedDuplicate.bookingNumber,fixedReturn.bookingNumber);
+    await expectStatus(baseUrl,200,`/api/trips/${trip.id}/passengers`,{method:'DELETE',cookie:admin,body:{id:confirmedDuplicate.id,deletionReason:'Fjerner bekræftet dublettest'}});
     assert.equal((await expectStatus(baseUrl, 200, `/api/trips/${returnTrip.id}/seats`, { cookie: admin })).value.find(seat => seat.number === 12).passengerId, fixedReturn.returnPassenger.id);
     await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: admin, body: { id: fixedReturn.id, deletionReason: 'Fjerner test af fast retur' } });
     assert.equal((await expectStatus(baseUrl, 200, `/api/trips/${returnTrip.id}/seats`, { cookie: admin })).value.find(seat => seat.number === 12).passengerId, null);
@@ -252,6 +260,8 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(partyBooking.passengers[0].phone, '40404040');
     assert.equal(partyBooking.passengers[1].partyRole, 'member');
     assert.equal(partyBooking.passengers[1].phone, '');
+    assert.match(partyBooking.passengers[0].bookingNumber,/^ALB-\d{4}-\d{6}$/);
+    assert.ok(partyBooking.passengers.every(passenger=>passenger.bookingNumber===partyBooking.passengers[0].bookingNumber));
     assert.equal(partyBooking.passengers[1].partyContactPhone, '40404040');
     assert.equal(partyBooking.passengers[1].paymentStatus, 'group_included');
     const notificationView=(await expectStatus(baseUrl,200,`/api/trips/${trip.id}`,{cookie:admin})).value;
@@ -549,6 +559,11 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.ok(reports.ledger.some(item=>item.kind==='expense'&&item.sourceId===driverCashExpense.id&&item.signedAmount<0));
     assert.ok(reports.ledger.some(item=>item.kind==='transfer'&&item.signedAmount===0));
     assert.ok(reports.ledger.some(item=>item.kind==='settlement'&&item.signedAmount===0));
+    assert.ok(reports.ledger.some(item=>item.kind==='correction'&&item.source==='passenger'&&item.signedAmount<0));
+    assert.ok(reports.ledger.every(item=>/^KAS-\d{4}-\d{6}$/.test(item.postingNumber)));
+    assert.equal(new Set(reports.ledger.map(item=>item.postingNumber)).size,reports.ledger.length);
+    assert.ok(reports.cashLedger.byHolder.some(item=>item.holderType==='office'));
+    assert.ok(reports.cashLedger.byHolder.every(item=>['DKK','EUR'].every(currency=>Number.isFinite(item.closing[currency]))));
 
     const adminDashboard = (await expectStatus(baseUrl, 200, '/api/dashboard', { cookie: admin })).value;
     assert.equal(adminDashboard.cashHeld.payments, 0);

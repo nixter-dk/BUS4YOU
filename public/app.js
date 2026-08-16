@@ -1368,6 +1368,55 @@ renderTrip=function(){
   $('#closePassengerList')?.addEventListener('click',showDriverPassengerListClosure);
 };
 
+// Permanent booking references and a deliberate confirmation step prevent
+// accidental duplicate passengers without blocking legitimate repeat travel.
+function confirmPossibleDuplicate(error){
+  return new Promise(resolve=>{
+    const dialog=$('#modal'),duplicates=Array.isArray(error.duplicates)?error.duplicates:[];let settled=false;
+    const finish=value=>{if(settled)return;settled=true;resolve(value)};
+    $('#modalBody').innerHTML=`<section class="duplicate-booking-dialog"><i class="bi bi-person-exclamation"></i><small>MULIG DOBBELTBOOKING</small><h2>Kontrollér passageren</h2><p>Systemet har fundet en reservation på samme tur med samme navn eller telefonnummer.</p><div class="duplicate-booking-list">${duplicates.map(item=>`<article><span><strong>${esc(item.name)}</strong><small>${esc(item.bookingNumber||'Ældre booking uden nummer')} · ${esc(item.phone||'Intet telefonnummer')}</small></span><b>Sæde ${item.seatNumber}</b></article>`).join('')}</div><div class="duplicate-booking-actions"><button type="button" class="btn btn-outline-secondary" data-cancel-duplicate><i class="bi bi-arrow-left"></i> Gå tilbage</button><button type="button" class="btn btn-warning" data-confirm-duplicate><i class="bi bi-check2-circle"></i> Opret alligevel</button></div></section>`;
+    $('[data-cancel-duplicate]').onclick=()=>{finish(false);dialog.close()};$('[data-confirm-duplicate]').onclick=()=>{finish(true);dialog.close()};dialog.addEventListener('close',()=>finish(false),{once:true});dialog.showModal();
+  });
+}
+const apiBeforeDuplicateBookingGuard=api;
+api=async function(path,options={}){
+  try{return await apiBeforeDuplicateBookingGuard(path,options)}catch(error){
+    if(error.duplicateWarning&&options?.method==='POST'){
+      let payload={};try{payload=JSON.parse(options.body||'{}')}catch(_){throw error}
+      if(payload.confirmDuplicate===true)throw error;
+      const confirmed=await confirmPossibleDuplicate(error);if(!confirmed)throw new Error('Bookingen blev ikke oprettet');
+      return apiBeforeDuplicateBookingGuard(path,{...options,body:JSON.stringify({...payload,confirmDuplicate:true})});
+    }
+    throw error;
+  }
+};
+
+const passengerRowBeforeBookingReference=passengerRow;
+passengerRow=function(passenger){let html=passengerRowBeforeBookingReference(passenger);if(passenger.bookingNumber){html=html.replace('</strong><br>',`</strong><small class="booking-reference"><i class="bi bi-bookmark-check"></i>${esc(passenger.bookingNumber)}</small><br>`);html=html.replace('data-search="',`data-search="${esc(passenger.bookingNumber.toLowerCase())} `)}return html};
+const checkinCardBeforeBookingReference=checkinCard;
+checkinCard=function(passenger){let html=checkinCardBeforeBookingReference(passenger);if(passenger.bookingNumber){html=html.replace('data-search="',`data-search="${esc(passenger.bookingNumber.toLowerCase())} `);html=html.replace('<small>Tryk for handlinger</small>',`<small class="booking-reference"><i class="bi bi-bookmark-check"></i>${esc(passenger.bookingNumber)} · tryk for handlinger</small>`)}return html};
+const showPassengerDetailBeforeBookingReference=showPassengerDetail;
+showPassengerDetail=function(id){showPassengerDetailBeforeBookingReference(id);const passenger=state.trip?.passengers?.find(item=>item.id===id),list=$('.detail-list');if(passenger?.bookingNumber&&list)list.insertAdjacentHTML('afterbegin',`<div class="booking-reference-detail"><span>Bookingnummer</span><strong>${esc(passenger.bookingNumber)}</strong></div>`)};
+
+const renderReportsBeforePermanentLedger=renderReports;
+renderReports=async function(){
+  await renderReportsBeforePermanentLedger();if(!$('.nav[data-view="reports"]')?.classList.contains('active'))return;
+  const section=$('.financial-ledger'),table=section?.querySelector('table');if(!section)return;
+  try{const report=await api('/api/reports'),entries=report.ledger||[],totals=['DKK','EUR'].reduce((result,currency)=>{result[currency]=entries.filter(entry=>entry.currency===currency).reduce((sum,entry)=>sum+Number(entry.signedAmount||0),0);return result},{});
+    section.querySelector('header>div')?.insertAdjacentHTML('beforeend',`<div class="ledger-currency-totals"><span>DKK <strong>${money(totals.DKK,'DKK')}</strong></span><span>EUR <strong>${money(totals.EUR,'EUR')}</strong></span></div>`);
+    const balances=report.cashLedger?.byHolder||[];if(balances.length)section.querySelector('.table-responsive')?.insertAdjacentHTML('beforebegin',`<div class="cash-ledger-balances">${balances.map(row=>`<article><header><i class="bi ${row.holderType==='office'?'bi-building':'bi-person-badge'}"></i><strong>${esc(row.holderName||'Ukendt')}</strong></header>${['DKK','EUR'].map(currency=>`<div><b>${currency}</b><span><small>Ind</small>${money(row.in[currency],currency)}</span><span><small>Ud</small>${money(row.out[currency],currency)}</span><span class="closing"><small>Saldo</small>${money(row.closing[currency],currency)}</span></div>`).join('')}</article>`).join('')}</div>`);
+    if(table){table.querySelector('thead tr')?.insertAdjacentHTML('afterbegin','<th>Postering</th>');[...table.querySelectorAll('tbody tr')].forEach((row,index)=>row.insertAdjacentHTML('afterbegin',`<td><code class="posting-number">${esc(entries[index]?.postingNumber||'–')}</code></td>`))}
+  }catch(error){toast(error.message)}
+};
+
+[
+  ['Bookingnummer','Numri i rezervimit','Buchungsnummer','Booking number'],
+  ['Mulig dobbeltbooking','Rezervim i mundshëm i dyfishtë','Mögliche Doppelbuchung','Possible duplicate booking'],
+  ['Opret alligevel','Krijo gjithsesi','Trotzdem erstellen','Create anyway'],
+  ['Gå tilbage','Kthehu','Zurück','Go back'],
+  ['Postering','Regjistrim','Buchungssatz','Entry']
+].forEach(row=>addTranslation(...row));
+
 // Administratorens samlede drifts- og sikkerhedscenter.
 const operationsNav=document.createElement('button');
 operationsNav.className='nav admin-only';operationsNav.dataset.view='operations';operationsNav.hidden=true;

@@ -1,5 +1,12 @@
 # BusOps – prioriteret roadmap
 
+## Gennemført
+
+- Punkt 1: sikker release, backup og rollback.
+- Punkt 2: permanent, nummereret kasseregnskab med DKK/EUR, modposteringer og medarbejdersaldi.
+- Punkt 6: automatisk bookingnummer for enkelt-, familie- og returbilletter.
+- Punkt 8: advarsel om mulig dobbeltbooking med kontrolleret tilsidesættelse.
+
 Denne liste gemmer de anbefalede næste forbedringer efter den nuværende Bootstrap-opdatering. Punkterne er prioriteret efter driftsrisiko og forretningsværdi.
 
 ## Før eller umiddelbart efter næste produktionsrelease
