@@ -6,6 +6,8 @@ BusOps kan køre på en hostingadresse uden eget domæne. Hostingudbyderens adre
 
 Repositoryet indeholder `render.yaml`, som kan oprette hele løsningen hos Render:
 
+Pushes til den tilknyttede produktionsbranch deployes automatisk via `autoDeployTrigger: commit`.
+
 - En Docker-baseret webtjeneste i Frankfurt.
 - En PostgreSQL-database i samme region.
 - En permanent disk til bagagebilleder og kvitteringer.

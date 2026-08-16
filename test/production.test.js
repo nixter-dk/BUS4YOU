@@ -136,3 +136,9 @@ test('the client clears protected trip data when a session expires', () => {
   assert.match(app, /r\.status===401&&url!==['"]\/api\/login['"]/);
   assert.match(app, /if\(element\.textContent===msg\)element\.textContent=''/);
 });
+
+test('Render deploys every commit pushed to the production branch', () => {
+  const blueprint = fs.readFileSync(path.join(__dirname, '..', 'render.yaml'), 'utf8');
+  assert.match(blueprint, /autoDeployTrigger:\s*commit/);
+  assert.doesNotMatch(blueprint, /autoDeployTrigger:\s*checksPass/);
+});
