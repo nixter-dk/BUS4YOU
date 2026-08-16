@@ -6,6 +6,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
 COPY server.js ./
+COPY ticket-pdf.js ./
 COPY public ./public
 COPY scripts ./scripts
 

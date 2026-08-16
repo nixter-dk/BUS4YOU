@@ -17,7 +17,7 @@ test('ticket generator creates a real one-page PDF with booking data', () => {
 });
 
 test('offline shell, IndexedDB queue, image optimization and alarm UI are wired', () => {
-  const root=path.join(__dirname,'..'),html=fs.readFileSync(path.join(root,'public','index.html'),'utf8'),app=fs.readFileSync(path.join(root,'public','app.js'),'utf8'),offline=fs.readFileSync(path.join(root,'public','offline.js'),'utf8'),worker=fs.readFileSync(path.join(root,'public','sw.js'),'utf8');
+  const root=path.join(__dirname,'..'),html=fs.readFileSync(path.join(root,'public','index.html'),'utf8'),app=fs.readFileSync(path.join(root,'public','app.js'),'utf8'),offline=fs.readFileSync(path.join(root,'public','offline.js'),'utf8'),worker=fs.readFileSync(path.join(root,'public','sw.js'),'utf8'),dockerfile=fs.readFileSync(path.join(root,'Dockerfile'),'utf8');
   assert.match(html,/offline\.js/);
   assert.match(app,/optimizeUploadImage/);
   assert.match(app,/syncOfflineActions/);
@@ -26,4 +26,5 @@ test('offline shell, IndexedDB queue, image optimization and alarm UI are wired'
   assert.match(offline,/indexedDB\.open/);
   assert.match(worker,/busops-shell/);
   assert.match(worker,/caches\.match/);
+  assert.match(dockerfile,/COPY ticket-pdf\.js/);
 });
