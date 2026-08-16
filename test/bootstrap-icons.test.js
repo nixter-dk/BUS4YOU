@@ -46,6 +46,9 @@ test('Bootstrap Icons are loaded and applied to dynamic BusOps controls', () => 
   assert.match(icons, /bi-shield-check/);
   assert.match(icons, /bootstrap-cash-flow-arrow/);
   assert.match(icons, /'my-cashbox': 'bi-wallet2'/);
+  assert.match(icons, /operations: 'bi-shield-lock-fill'/);
+  assert.match(app, /function renderOperationsCenter\(\)/);
+  assert.match(css, /\.operations-status-grid/);
   assert.match(icons, /\.picture-bus-icon/);
   assert.match(icons, /#pictureSeatBack/);
   assert.match(icons, /\.expense-card-icon/);

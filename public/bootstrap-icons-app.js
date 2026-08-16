@@ -9,7 +9,8 @@ const busOpsNavIcons = {
   reports: 'bi-graph-up-arrow',
   branding: 'bi-image-fill',
   account: 'bi-gear-fill',
-  'my-cashbox': 'bi-wallet2'
+  'my-cashbox': 'bi-wallet2',
+  operations: 'bi-shield-lock-fill'
 };
 
 const busOpsTabIcons = {

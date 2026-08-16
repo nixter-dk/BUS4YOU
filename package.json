@@ -5,6 +5,9 @@
   "description": "Booking- og check-in-system til busture",
   "scripts": {
     "start": "node server.js",
+    "backup": "node scripts/backup-database.js",
+    "restore": "node scripts/restore-database.js",
+    "smoke": "node scripts/smoke-check.js",
     "test": "node --test",
     "check": "node --check server.js && node --check public/app.js && node --test"
   },

@@ -14,6 +14,7 @@ process.env.R2_SECRET_ACCESS_KEY = 'test-secret-key';
 process.env.R2_BUCKET = 'busops-files';
 process.env.R2_PREFIX = 'busops';
 process.env.R2_JURISDICTION = 'eu';
+process.env.BACKUP_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64');
 
 const requests = [];
 let r2Status = 200;
@@ -22,7 +23,7 @@ global.fetch = async (url, options = {}) => {
   return new Response(null, { status: options.method === 'PUT' || options.method === 'DELETE' ? r2Status : 404 });
 };
 
-const { storageReady, fileStorage } = require('../server');
+const { storageReady, fileStorage, maintenance } = require('../server');
 
 test('mirror storage writes and deletes locally and in private Cloudflare R2', async () => {
   await storageReady;
@@ -47,6 +48,22 @@ test('mirror storage preserves the Render copy if R2 is temporarily unavailable'
   const bytes = Buffer.from('offline-safe-copy');
   await fileStorage.storeFile('fallback.jpg', bytes, 'image/jpeg');
   assert.deepEqual(fs.readFileSync(path.join(process.env.UPLOAD_DIR, 'fallback.jpg')), bytes);
+});
+
+test('database backups are compressed, encrypted and uploaded to private R2', async () => {
+  r2Status = 200;
+  const run = await maintenance.createDatabaseBackup({ reason:'test' });
+  const request = requests.at(-1);
+  assert.equal(run.status, 'success');
+  assert.equal(run.type, 'database_backup');
+  assert.match(run.summary.file, /^database-backup-.*\.busops$/);
+  assert.equal(request.method, 'PUT');
+  assert.match(request.url, /\/busops\/database-backup-/);
+  const bytes = Buffer.from(request.body);
+  assert.equal(bytes.subarray(0, 7).toString(), 'BUSOPS1');
+  assert.ok(!bytes.includes(Buffer.from('admin@albaturist.dk')));
+  const restored = maintenance.decryptDatabaseSnapshot(bytes);
+  assert.equal(restored.users[0].role, 'admin');
 });
 
 test.after(() => fs.rmSync(root, { recursive:true, force:true }));

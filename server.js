@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const zlib = require('zlib');
 const { Readable } = require('stream');
 
 const PORT = Number(process.env.PORT || 3000);
@@ -16,6 +17,9 @@ const R2_BUCKET = String(process.env.R2_BUCKET || '').trim();
 const R2_PREFIX = String(process.env.R2_PREFIX || 'busops').trim().replace(/^\/+|\/+$/g, '');
 const R2_JURISDICTION = String(process.env.R2_JURISDICTION || '').trim().toLowerCase().replace(/[^a-z0-9-]/g,'');
 const R2_CONFIGURED = Boolean(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET);
+const BACKUP_ENCRYPTION_KEY = String(process.env.BACKUP_ENCRYPTION_KEY || '').trim();
+const BACKUP_INTERVAL_HOURS = Math.max(0, Number(process.env.BACKUP_INTERVAL_HOURS || 0));
+const RELEASE_ID = String(process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || 'local').slice(0, 12);
 let lastFileStorageError = null;
 const PUBLIC = path.join(__dirname, 'public');
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -51,12 +55,12 @@ function seed() {
     { id: 3, name: 'Sara Chauffør', email: 'sara@albaturist.dk', role: 'driver', salt: driver2.salt, passwordHash: driver2.hash }
   );
   return {
-    meta: { version: 23, nextId: 20 },
+    meta: { version: 24, nextId: 20 },
     settings: { logoFile: null, logoType: null, logoName: null },
     users,
     stops: [], buses: [],
     trips: [],
-    passengers: [], baggage: [], expenses: [], cashSettlements: [], cashTransfers: [], cashBudgetEntries: [], notificationDrafts: [], auditLog: [], sessions: []
+    passengers: [], baggage: [], expenses: [], cashSettlements: [], cashTransfers: [], cashBudgetEntries: [], notificationDrafts: [], auditLog: [], sessions: [], systemEvents: [], securityEvents: [], maintenanceRuns: []
   };
 }
 function writeLocalDb(value) {
@@ -98,7 +102,7 @@ function migrateDb(value) {
   let migrated = false;
   value.meta = value.meta || { version: 1, nextId: 20 };
   if (!value.settings || typeof value.settings !== 'object') { value.settings = { logoFile:null,logoType:null,logoName:null }; migrated = true; }
-  for (const name of ['users','stops','buses','trips','passengers','baggage','expenses','cashSettlements','cashTransfers','cashBudgetEntries','notificationDrafts','auditLog']) if (!Array.isArray(value[name])) { value[name] = []; migrated = true; }
+  for (const name of ['users','stops','buses','trips','passengers','baggage','expenses','cashSettlements','cashTransfers','cashBudgetEntries','notificationDrafts','auditLog','systemEvents','securityEvents','maintenanceRuns']) if (!Array.isArray(value[name])) { value[name] = []; migrated = true; }
   if ((value.meta.version || 1) < 3) {
     value.stops = []; value.trips = []; value.passengers = []; value.baggage = [];
     value.meta.version = 3; migrated = true;
@@ -194,6 +198,7 @@ function migrateDb(value) {
     value.meta.version = 22; migrated = true;
   }
   if ((value.meta.version || 1) < 23) { value.notificationDrafts = value.notificationDrafts || []; value.meta.version = 23; migrated = true; }
+  if ((value.meta.version || 1) < 24) { value.systemEvents = value.systemEvents || []; value.securityEvents = value.securityEvents || []; value.maintenanceRuns = value.maintenanceRuns || []; value.meta.version = 24; migrated = true; }
   for(const user of value.users){if(!['da','sq','de','en'].includes(user.language)){user.language='da';migrated=true}}
   for (const trip of value.trips) {
     if (!trip.seatCount) { trip.seatCount = 54; migrated = true; }
@@ -270,6 +275,70 @@ async function storeImage(data,{prefix,maxBytes=10*1024*1024}={}) {
   await storeFile(file,bytes,type);return{file,type,name};
 }
 async function storedImage(res,file,type){return serveStoredFile(res,file,type)}
+function backupKey() {
+  if (!BACKUP_ENCRYPTION_KEY) return null;
+  let key;
+  try { key = Buffer.from(BACKUP_ENCRYPTION_KEY, 'base64'); } catch (_) { return null; }
+  return key.length === 32 ? key : null;
+}
+function referencedStoredFiles() {
+  const references=[];
+  const add=(file,type,name,source,entityId)=>{const safeFile=path.basename(String(file||''));if(safeFile)references.push({file:safeFile,type:type||'application/octet-stream',name:name||safeFile,source,entityId:Number(entityId)||null})};
+  add(db.settings?.logoFile,db.settings?.logoType,db.settings?.logoName,'branding',null);
+  for(const user of db.users||[])add(user.portraitFile,user.portraitType,user.portraitName,'user',user.id);
+  for(const item of db.baggage||[])add(item.photoFile,item.photoType,item.photoName,'baggage',item.id);
+  for(const expense of db.expenses||[])add(expense.receiptFile,expense.receiptType,expense.receiptName,'expense',expense.id);
+  const unique=new Map();for(const reference of references){const current=unique.get(reference.file);if(current)current.references.push({source:reference.source,entityId:reference.entityId});else unique.set(reference.file,{...reference,references:[{source:reference.source,entityId:reference.entityId}]})}
+  return [...unique.values()];
+}
+function maintenanceRun(type,status,summary={},user=null) {
+  const run={id:id(),type,status,startedAt:summary.startedAt||new Date().toISOString(),finishedAt:new Date().toISOString(),createdBy:user?.id||null,createdByName:user?.name||'System',summary:{...summary}};
+  delete run.summary.startedAt;db.maintenanceRuns.push(run);if(db.maintenanceRuns.length>250)db.maintenanceRuns.splice(0,db.maintenanceRuns.length-250);return run;
+}
+function systemEvent(level,type,message,details={}) {
+  if(!db)return null;const event={id:id(),at:new Date().toISOString(),level,type,message,details,acknowledgedAt:null,acknowledgedBy:null};db.systemEvents.push(event);if(db.systemEvents.length>500)db.systemEvents.splice(0,db.systemEvents.length-500);return event;
+}
+async function inspectStoredFiles({verifyR2=false}={}) {
+  const files=referencedStoredFiles(),items=[];
+  for(const reference of files){
+    const localPath=path.join(UPLOAD_DIR,reference.file),local=fs.existsSync(localPath),localBytes=local?fs.statSync(localPath).size:null;let r2=null,r2Error=null;
+    if(verifyR2&&R2_CONFIGURED){try{const response=await r2Request('HEAD',reference.file);r2=response.ok;r2Error=response.ok||response.status===404?null:`HTTP ${response.status}`}catch(error){r2=false;r2Error=error.message}}
+    items.push({...reference,local,localBytes,r2,r2Error});
+  }
+  return {backend:FILE_STORAGE_BACKEND,r2Configured:R2_CONFIGURED,total:items.length,local:items.filter(item=>item.local).length,r2:items.filter(item=>item.r2===true).length,missingLocal:items.filter(item=>!item.local).length,missingR2:verifyR2?items.filter(item=>item.r2===false).length:null,items};
+}
+async function migrateStoredFilesToR2({dryRun=false,user=null}={}) {
+  if(!R2_CONFIGURED)throw storageError('Cloudflare R2 er ikke fuldt konfigureret',503);
+  const startedAt=new Date().toISOString(),report=await inspectStoredFiles({verifyR2:true}),result={startedAt,dryRun,total:report.total,copied:0,alreadyPresent:0,missingLocal:0,failed:0,errors:[]};
+  for(const item of report.items){
+    if(item.r2){result.alreadyPresent++;continue}
+    if(!item.local){result.missingLocal++;result.errors.push({file:item.file,error:'Den lokale original findes ikke'});continue}
+    if(dryRun)continue;
+    try{const bytes=fs.readFileSync(path.join(UPLOAD_DIR,item.file)),response=await r2Request('PUT',item.file,{bytes,type:item.type});if(!response.ok)throw storageError(`R2 svarede HTTP ${response.status}`);result.copied++}
+    catch(error){result.failed++;result.errors.push({file:item.file,error:error.message})}
+  }
+  const status=result.failed||result.missingLocal?'warning':'success',run=maintenanceRun('file_migration',status,result,user);systemEvent(status==='success'?'info':'warning','file_migration',status==='success'?`Filkontrol afsluttet: ${result.copied} filer kopieret til R2`:`Filkontrol afsluttet med ${result.failed+result.missingLocal} problemer`,{runId:run.id,copied:result.copied,failed:result.failed,missingLocal:result.missingLocal});await saveDb();return run;
+}
+function encryptDatabaseSnapshot(value=db) {
+  const key=backupKey();if(!key)throw storageError('BACKUP_ENCRYPTION_KEY skal vÃ¦re en base64-kodet nÃ¸gle pÃ¥ 32 bytes',503);
+  const iv=crypto.randomBytes(12),cipher=crypto.createCipheriv('aes-256-gcm',key,iv),compressed=zlib.gzipSync(Buffer.from(JSON.stringify(value))),encrypted=Buffer.concat([cipher.update(compressed),cipher.final()]),tag=cipher.getAuthTag();
+  return Buffer.concat([Buffer.from('BUSOPS1'),iv,tag,encrypted]);
+}
+function decryptDatabaseSnapshot(bytes) {
+  const key=backupKey(),buffer=Buffer.from(bytes);if(!key)throw storageError('BACKUP_ENCRYPTION_KEY er ikke gyldig',503);if(buffer.subarray(0,7).toString()!=='BUSOPS1')throw storageError('Backupfilen har et ukendt format',400);
+  const iv=buffer.subarray(7,19),tag=buffer.subarray(19,35),encrypted=buffer.subarray(35),decipher=crypto.createDecipheriv('aes-256-gcm',key,iv);decipher.setAuthTag(tag);const raw=zlib.gunzipSync(Buffer.concat([decipher.update(encrypted),decipher.final()]));return JSON.parse(raw.toString('utf8'));
+}
+function validateDatabaseSnapshot(value) {
+  if(!value||typeof value!=='object'||!value.meta||!Array.isArray(value.users)||!Array.isArray(value.trips)||!Array.isArray(value.passengers))throw storageError('Backupfilen indeholder ikke en gyldig BusOps-database',400);return value;
+}
+async function createDatabaseBackup({user=null,reason='manual'}={}) {
+  if(!R2_CONFIGURED)throw storageError('Cloudflare R2 er ikke fuldt konfigureret',503);const startedAt=new Date().toISOString(),bytes=encryptDatabaseSnapshot(db),timestamp=startedAt.replace(/[:.]/g,'-'),file=`database-backup-${timestamp}.busops`;
+  const response=await r2Request('PUT',file,{bytes,type:'application/octet-stream'});if(!response.ok)throw storageError(`R2 afviste databasebackuppen (HTTP ${response.status})`);
+  const run=maintenanceRun('database_backup','success',{startedAt,reason,file,bytes:bytes.length,records:{users:db.users.length,trips:db.trips.length,passengers:db.passengers.length,baggage:db.baggage.length,expenses:db.expenses.length}},user);systemEvent('info','database_backup','Krypteret databasebackup blev oprettet',{runId:run.id,file,bytes:bytes.length});await saveDb();return run;
+}
+async function restoreDatabaseBackupBytes(bytes,{confirmed=false,user=null}={}) {
+  if(!confirmed)throw storageError('Gendannelse krÃ¦ver en udtrykkelig bekrÃ¦ftelse',400);const restored=validateDatabaseSnapshot(decryptDatabaseSnapshot(bytes));migrateDb(restored);db=restored;const run=maintenanceRun('database_restore','success',{reason:'explicit_restore',records:{users:db.users.length,trips:db.trips.length,passengers:db.passengers.length,baggage:db.baggage.length,expenses:db.expenses.length}},user);systemEvent('warning','database_restore','Databasen blev gendannet fra en krypteret backup',{runId:run.id});await saveDb();return run;
+}
 function userName(userId) { return userId ? db.users.find(user => user.id === userId)?.name || 'Ukendt medarbejder' : null; }
 function userHasOperationalHistory(userId) {
   return db.trips.some(trip=>[trip.primaryDriverId,trip.secondaryDriverId,trip.salesManagerId,trip.cancelledBy,trip.closedBy,trip.reopenedBy].includes(userId))
@@ -361,6 +430,12 @@ function sessionCookie(sid, maxAgeSeconds) {
 function requestIp(req) {
   if (TRUST_PROXY && req.headers['x-forwarded-for']) return String(req.headers['x-forwarded-for']).split(',')[0].trim();
   return req.socket.remoteAddress || 'ukendt';
+}
+function maskedIp(req) {
+  const value=requestIp(req);if(value.includes(':'))return `${value.split(':').slice(0,4).join(':')}::`;const parts=value.split('.');return parts.length===4?`${parts[0]}.${parts[1]}.${parts[2]}.x`:'ukendt';
+}
+function recordSecurityEvent(req,type,{email=null,userId=null,details={}}={}) {
+  if(!db)return null;const event={id:id(),at:new Date().toISOString(),type,email:email?String(email).trim().toLowerCase():null,userId:userId||null,ip:maskedIp(req),userAgent:String(req.headers['user-agent']||'Ukendt enhed').slice(0,240),details};db.securityEvents.push(event);if(db.securityEvents.length>500)db.securityEvents.splice(0,db.securityEvents.length-500);return event;
 }
 function loginAllowed(req) {
   const key = requestIp(req), now = Date.now(), windowMs = 15 * 60 * 1000;
@@ -581,17 +656,18 @@ function cashRecordByReferenceAny(reference) {
   return record ? { kind,record,reference:`${kind}:${record.id}` } : null;
 }
 async function api(req, res, pathname) {
-  if (pathname === '/api/health' && req.method === 'GET') return json(res, 200, { ok: true, storage: DATABASE_URL ? 'postgresql' : 'json', fileStorage:{backend:FILE_STORAGE_BACKEND,r2Configured:R2_CONFIGURED,lastError:lastFileStorageError}, time: new Date().toISOString() });
+  if (pathname === '/api/health' && req.method === 'GET') {const latestBackup=(db.maintenanceRuns||[]).filter(run=>run.type==='database_backup'&&run.status==='success').at(-1)||null;return json(res, 200, { ok: true,release:RELEASE_ID,uptimeSeconds:Math.round(process.uptime()),storage: DATABASE_URL ? 'postgresql' : 'json',database:{ready:Boolean(db),backend:DATABASE_URL?'postgresql':'json'},fileStorage:{backend:FILE_STORAGE_BACKEND,r2Configured:R2_CONFIGURED,lastError:lastFileStorageError},backup:{configured:Boolean(backupKey()&&R2_CONFIGURED),lastSuccessAt:latestBackup?.finishedAt||null}, time: new Date().toISOString() });}
   if(pathname==='/api/branding/logo'&&req.method==='GET')return storedImage(res,db.settings?.logoFile,db.settings?.logoType);
   if (pathname === '/api/login' && req.method === 'POST') {
-    if (!loginAllowed(req)) return fail(res, 429, 'For mange loginforsøg. Vent 15 minutter og prøv igen');
+    if (!loginAllowed(req)) {recordSecurityEvent(req,'login_rate_limited');await saveDb();return fail(res, 429, 'For mange loginforsøg. Vent 15 minutter og prøv igen');}
     const data = await body(req); const user = db.users.find(u => u.email.toLowerCase() === String(data.email || '').toLowerCase());
-    if (!user || !verifyPassword(String(data.password || ''), user)) { recordFailedLogin(req); return fail(res, 401, 'Forkert e-mail eller adgangskode'); }
+    if (!user || !verifyPassword(String(data.password || ''), user)) { recordFailedLogin(req);recordSecurityEvent(req,'login_failed',{email:data.email,userId:user?.id||null});await saveDb(); return fail(res, 401, 'Forkert e-mail eller adgangskode'); }
     loginAttempts.delete(requestIp(req));
     const now = Date.now(), sid = crypto.randomBytes(32).toString('hex'),rememberMe=data.rememberMe===true||data.rememberMe==='true',ttl=rememberMe?REMEMBERED_SESSION_TTL_MS:SESSION_TTL_MS;
     db.sessions = db.sessions.filter(session => session.expiresAt > now);
     const previousSessions=db.sessions.filter(session=>session.userId===user.id).sort((left,right)=>right.createdAt-left.createdAt).slice(4);if(previousSessions.length){const removeIds=new Set(previousSessions.map(session=>session.id));db.sessions=db.sessions.filter(session=>!removeIds.has(session.id))}
-    db.sessions.push({ id: sid, userId: user.id, createdAt: now, expiresAt: now + ttl, remembered:rememberMe });
+    db.sessions.push({ id: sid, userId: user.id, createdAt: now, expiresAt: now + ttl, remembered:rememberMe,ip:maskedIp(req),userAgent:String(req.headers['user-agent']||'Ukendt enhed').slice(0,240) });
+    recordSecurityEvent(req,'login_succeeded',{userId:user.id,email:user.email});
     await saveDb();
     return json(res, 200, { user: cleanUser(user) }, { 'Set-Cookie': sessionCookie(sid, rememberMe?ttl/1000:undefined) });
   }
@@ -600,6 +676,25 @@ async function api(req, res, pathname) {
     return json(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie('', 0) });
   }
   const user = auth(req); if (!user) return fail(res, 401, 'Log ind for at fortsætte');
+  if(pathname==='/api/admin/operations'&&req.method==='GET'){
+    if(user.role!=='admin')return fail(res,403,'Kun administratoren har adgang til systemdrift');
+    const fileReport=await inspectStoredFiles({verifyR2:false}),now=Date.now(),currentSid=cookies(req).sid,sessions=db.sessions.filter(session=>session.expiresAt>now).map(session=>({key:sha256(session.id).slice(0,16),userId:session.userId,userName:userName(session.userId),role:db.users.find(candidate=>candidate.id===session.userId)?.role||'ukendt',createdAt:new Date(session.createdAt).toISOString(),expiresAt:new Date(session.expiresAt).toISOString(),remembered:Boolean(session.remembered),ip:session.ip||'ukendt',userAgent:session.userAgent||'Ukendt enhed',current:session.id===currentSid})).sort((left,right)=>new Date(right.createdAt)-new Date(left.createdAt));
+    const failedLogins=(db.securityEvents||[]).filter(event=>event.type==='login_failed'||event.type==='login_rate_limited').slice(-100).reverse();
+    return json(res,200,{health:{release:RELEASE_ID,uptimeSeconds:Math.round(process.uptime()),database:DATABASE_URL?'postgresql':'json',fileStorage:{backend:FILE_STORAGE_BACKEND,r2Configured:R2_CONFIGURED,lastError:lastFileStorageError},backupConfigured:Boolean(backupKey()&&R2_CONFIGURED)},files:fileReport,maintenance:[...(db.maintenanceRuns||[])].slice(-50).reverse(),events:[...(db.systemEvents||[])].slice(-100).reverse(),security:{activeSessions:sessions,failedLogins}});
+  }
+  if(pathname==='/api/admin/files/migrate'&&req.method==='POST'){
+    if(user.role!=='admin')return fail(res,403,'Kun administratoren kan migrere filer');const data=await body(req),run=await migrateStoredFilesToR2({dryRun:data.dryRun===true,user});audit(user,'system.files_migrated','system',run.id,null,{status:run.status,...run.summary});await saveDb();return json(res,200,{run});
+  }
+  if(pathname==='/api/admin/backups'&&req.method==='POST'){
+    if(user.role!=='admin')return fail(res,403,'Kun administratoren kan oprette databasebackups');const run=await createDatabaseBackup({user,reason:'manual'});audit(user,'system.database_backed_up','system',run.id,null,{file:run.summary.file,bytes:run.summary.bytes});await saveDb();return json(res,201,{run});
+  }
+  if(pathname==='/api/admin/system-events'&&req.method==='PATCH'){
+    if(user.role!=='admin')return fail(res,403,'Kun administratoren kan kvittere systemhændelser');const data=await body(req),targets=data.all===true?db.systemEvents.filter(event=>!event.acknowledgedAt):db.systemEvents.filter(event=>event.id===Number(data.id));const at=new Date().toISOString();for(const event of targets){event.acknowledgedAt=at;event.acknowledgedBy=user.id}audit(user,'system.events_acknowledged','system',null,null,{count:targets.length});await saveDb();return json(res,200,{acknowledged:targets.length});
+  }
+  const adminSessionMatch=pathname.match(/^\/api\/admin\/sessions\/([a-f0-9]{16})$/);
+  if(adminSessionMatch&&req.method==='DELETE'){
+    if(user.role!=='admin')return fail(res,403,'Kun administratoren kan afslutte andre sessioner');const currentSid=cookies(req).sid,target=db.sessions.find(session=>sha256(session.id).slice(0,16)===adminSessionMatch[1]);if(!target)return fail(res,404,'Sessionen findes ikke');if(target.id===currentSid)return fail(res,409,'Din aktuelle session skal afsluttes med Log ud');db.sessions=db.sessions.filter(session=>session!==target);audit(user,'security.session_revoked','session',adminSessionMatch[1],null,{userId:target.userId});await saveDb();return json(res,200,{ok:true});
+  }
   if(pathname==='/api/audit'&&req.method==='GET'){
     if(user.role!=='admin')return fail(res,403,'Kun administratoren kan se revisionshistorikken');
     const url=new URL(req.url,`http://${req.headers.host||'localhost'}`),tripId=Number(url.searchParams.get('tripId')||0),limit=Math.min(500,Math.max(1,Number(url.searchParams.get('limit')||200)));
@@ -1461,8 +1556,13 @@ async function shutdown(signal) {
   await storageWriteQueue.catch(() => {});
   if (pool) await pool.end();
 }
+function scheduleAutomaticBackups() {
+  if(!(BACKUP_INTERVAL_HOURS>0)||!R2_CONFIGURED||!backupKey())return null;
+  const interval=Math.max(60*60*1000,BACKUP_INTERVAL_HOURS*60*60*1000),run=async()=>{try{await createDatabaseBackup({reason:'scheduled'})}catch(error){systemEvent('critical','database_backup_failed','Automatisk databasebackup fejlede',{message:error.message});await saveDb().catch(()=>{});console.error('Automatisk databasebackup fejlede:',error.message)}};
+  const timer=setInterval(run,interval);timer.unref();const first=setTimeout(run,Math.min(5*60*1000,interval));first.unref();return timer;
+}
 if (require.main === module) {
-  server.listen(PORT, HOST, () => console.log(`BusOps kører på http://${HOST}:${PORT} med ${DATABASE_URL ? 'PostgreSQL' : 'JSON-lagring'}`));
+  server.listen(PORT, HOST, () => {console.log(`BusOps kører på http://${HOST}:${PORT} med ${DATABASE_URL ? 'PostgreSQL' : 'JSON-lagring'}`);scheduleAutomaticBackups()});
   for (const signal of ['SIGTERM','SIGINT']) process.once(signal, () => shutdown(signal).finally(() => process.exit(0)));
 }
-module.exports = { server, seed, hashPassword, verifyPassword, seatMap, storageReady, fileStorage:{storeFile,removeStoredFile,r2Request,backend:FILE_STORAGE_BACKEND,r2Configured:R2_CONFIGURED} };
+module.exports = { server, seed, hashPassword, verifyPassword, seatMap, storageReady, fileStorage:{storeFile,removeStoredFile,r2Request,inspectStoredFiles,migrateStoredFilesToR2,backend:FILE_STORAGE_BACKEND,r2Configured:R2_CONFIGURED},maintenance:{createDatabaseBackup,restoreDatabaseBackupBytes,decryptDatabaseSnapshot,backupConfigured:Boolean(backupKey())} };

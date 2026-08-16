@@ -78,6 +78,17 @@ test('production mode enforces secure startup, origin checks and persistent sess
     assert.equal(stored.users[0].role, 'admin');
     assert.equal(stored.sessions.length, 1);
     assert.ok(stored.sessions[0].expiresAt > Date.now());
+    assert.match(stored.sessions[0].ip, /\.x$|::$|ukendt/);
+    assert.ok(stored.sessions[0].userAgent);
+
+    const operations = await fetch(`${baseUrl}/api/admin/operations`, { headers:{ Cookie:cookie.split(';')[0] } });
+    assert.equal(operations.status, 200);
+    const operationsBody = await operations.json();
+    assert.equal(operationsBody.health.database, 'json');
+    assert.equal(operationsBody.security.activeSessions.length, 1);
+    assert.equal(operationsBody.security.activeSessions[0].current, true);
+    assert.equal(operationsBody.security.activeSessions[0].key.length, 16);
+    assert.equal('id' in operationsBody.security.activeSessions[0], false);
 
     const logout = await fetch(`${baseUrl}/api/logout`, {
       method: 'POST',

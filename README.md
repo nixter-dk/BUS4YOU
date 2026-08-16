@@ -71,6 +71,7 @@ En tom lokal testdatabase opretter udviklingsbrugere automatisk. De er kun bereg
 - Bagageflow: registreret, modtaget, ombord, udleveret og ikke afhentet
 - Interne beskedkladder til bookingbekræftelser og aflysninger; de sendes ikke eksternt, før en godkendt SMS- eller e-mailtjeneste bliver tilkoblet
 - Vedvarende lokal database med atomisk lagring
+- Administratorens system- og sikkerhedscenter med R2-filkontrol, krypterede databasebackups, systemadvarsler, loginhændelser og aktive sessioner
 
 ## Struktur
 
@@ -104,6 +105,8 @@ render.yaml         Samlet Render-opsætning med web, database og fil-disk
 | `R2_BUCKET` | tom | Navnet på R2-bucketen |
 | `R2_PREFIX` | `busops` | Mappepræfiks til BusOps-filer |
 | `R2_JURISDICTION` | tom | `eu` for en bucket med EU-jurisdiktion |
+| `BACKUP_ENCRYPTION_KEY` | tom | Base64-kodet 32-byte nøgle til krypterede databasebackups |
+| `BACKUP_INTERVAL_HOURS` | `0` | Interval for automatisk R2-backup; Render-konfigurationen bruger 24 timer |
 | `INITIAL_ADMIN_EMAIL` | lokal standardværdi | Første administrator i en tom database |
 | `INITIAL_ADMIN_PASSWORD` | lokal testværdi | Påkrævet i produktion, mindst 12 tegn |
 | `SESSION_TTL_HOURS` | `8` | Login-sessionens varighed |
@@ -146,5 +149,7 @@ Den medfølgende `render.yaml` kan oprette webtjeneste, PostgreSQL og permanent 
 Bagagebilleder og kvitteringer skal ligge på en permanent disk. Database og disk skal sikkerhedskopieres separat. Den samlede trin-for-trin-tjekliste findes i `docs/production.md`.
 
 BusOps kan desuden spejle nye filer til en privat Cloudflare R2-bucket. Start altid med `FILE_STORAGE_BACKEND=mirror`, så Render-disken fortsat fungerer som sikkerhed. Se `docs/cloudflare-r2.md`.
+
+Migrering af eksisterende filer, krypteret databasebackup, gendannelse og driftskontrol er beskrevet i `docs/drift-og-backup.md`.
 
 Ved en helt tom produktionsdatabase oprettes kun administratoren fra `INITIAL_ADMIN_EMAIL` og `INITIAL_ADMIN_PASSWORD`. Demo-chauffører oprettes aldrig i produktion.
