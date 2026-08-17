@@ -15,14 +15,21 @@ test('ticket QR encoder creates a complete version 6 matrix without personal dat
   assert.doesNotMatch(svg,/Emine|telefon|betaling/i);
 });
 
-test('driver scanner UI is wired to the protected trip endpoint', () => {
-  const root=path.join(__dirname,'..'),app=fs.readFileSync(path.join(root,'public','app.js'),'utf8'),css=fs.readFileSync(path.join(root,'public','styles.css'),'utf8'),server=fs.readFileSync(path.join(root,'server.js'),'utf8');
+test('assigned drivers and on-duty sales managers can open the protected passenger scanner', () => {
+  const root=path.join(__dirname,'..'),app=fs.readFileSync(path.join(root,'public','app.js'),'utf8'),passenger=fs.readFileSync(path.join(root,'public','passenger-bootstrap.js'),'utf8'),html=fs.readFileSync(path.join(root,'public','index.html'),'utf8'),css=fs.readFileSync(path.join(root,'public','styles.css'),'utf8'),server=fs.readFileSync(path.join(root,'server.js'),'utf8');
   assert.match(app,/BarcodeDetector/);
+  assert.match(app,/window\.jsQR/);
   assert.match(app,/ticket-scan/);
-  assert.match(app,/Scan billet/);
+  assert.match(app,/QR-koden tilhører ikke den valgte passager/);
+  assert.match(passenger,/\['driver',\s*'sales_manager'\]\.includes\(state\.user\.role\)/);
+  assert.match(passenger,/class="checkin-name-trigger" data-passenger-actions/);
+  assert.match(passenger,/data-sheet-action="scan-ticket"/);
+  assert.match(passenger,/openTicketScanner\(id\)/);
+  assert.doesNotMatch(app,/data-open-ticket-scanner/);
+  assert.match(html,/jsqr@1\.4\.0\/dist\/jsQR\.js/);
   assert.match(css,/\.ticket-scanner/);
   assert.match(server,/passenger\.qr_checked_in/);
-  assert.match(server,/Kun en tildelt chauffør kan checke ind ved at scanne billetten/);
+  assert.match(server,/Kun en tildelt chauffør eller salgschefen på vagt kan checke ind ved at scanne billetten/);
 });
 
 test('digital and PDF tickets use only the bundled original Alba Turist logo', () => {

@@ -606,7 +606,7 @@ function applySecurityHeaders(res) {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self'; font-src 'self' https://cdn.jsdelivr.net; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self'; font-src 'self' https://cdn.jsdelivr.net; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
   if (IS_PRODUCTION) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 }
 function assignedDriver(user,trip){return user.role==='driver'&&[trip.primaryDriverId,trip.secondaryDriverId].includes(user.id)}
@@ -1361,7 +1361,7 @@ async function api(req, res, pathname) {
   if (part === 'seats' && req.method === 'GET') return json(res, 200, seatMap(trip.id));
   if (trip.status === 'cancelled' && ['passengers','group-bookings','baggage','ticket-scan'].includes(part)) return fail(res,409,'Turen er annulleret og kan ikke længere bruges til salg eller check-in');
   if (part === 'ticket-scan' && req.method === 'POST') {
-    if(user.role!=='driver')return fail(res,403,'Kun en tildelt chauffør kan checke ind ved at scanne billetten');
+    if(!['driver','sales_manager'].includes(user.role)||!canOperateTrip(user,trip))return fail(res,403,'Kun en tildelt chauffør eller salgschefen på vagt kan checke ind ved at scanne billetten');
     const data=await body(req),scanValue=String(data.token||'').trim();
     let token=scanValue;
     try{const scannedUrl=new URL(scanValue);token=decodeURIComponent(scannedUrl.pathname.match(/^\/ticket\/([^/]+)$/)?.[1]||'')}catch(_){}

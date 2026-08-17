@@ -205,6 +205,7 @@ function showBootstrapPassengerActionSheet(id) {
   const attendanceText = passengerAttendanceLabel(passenger);
   const payment = passengerActionPayment(passenger);
   const canOperate = typeof salesManagerCanOperateCurrentTrip !== 'function' || salesManagerCanOperateCurrentTrip();
+  const canScanTicket = canOperate && ['driver', 'sales_manager'].includes(state.user.role) && !passenger.checkedIn;
   const canCollectPayment = ['unpaid', 'pay_dk', 'pay_mk'].includes(passenger.paymentStatus) && !passenger.externalPaymentConfirmedAt;
   const canConfirmExternal = ['admin', 'sales_manager'].includes(state.user.role) && ['pay_dk', 'pay_mk'].includes(passenger.paymentStatus) && !passenger.externalPaymentConfirmedAt;
   const seatLabel = passenger.extraSeatNumber ? `${passenger.seatNumber} + ${passenger.extraSeatNumber}` : passenger.seatNumber;
@@ -239,6 +240,7 @@ function showBootstrapPassengerActionSheet(id) {
   }
 
   const secondaryActions = [
+    canScanTicket ? passengerActionButton('scan-ticket', 'bi-qr-code-scan', 'Scan billet', 'Åbn kamera og kontrollér billetten', 'scan') : '',
     canConfirmExternal ? passengerActionButton('confirm-external', 'bi-patch-check-fill', `Bekræft betaling i ${passenger.paymentStatus === 'pay_mk' ? 'MK' : 'DK'}`, 'Gem beløb, valuta, tidspunkt og medarbejder', 'external') : '',
     canCollectPayment ? passengerActionButton('payment', 'bi-cash-coin', 'Registrer betaling', 'Kontant betaling i DKK eller EUR', 'payment') : '',
     passenger.phone ? `<a class="passenger-action-control btn call" href="tel:${esc(passenger.phone)}"><span class="passenger-action-control-icon"><i class="bi bi-telephone-fill" aria-hidden="true"></i></span><span><strong>Ring til passager</strong><small>${esc(passenger.phone)}</small></span><i class="bi bi-chevron-right passenger-action-chevron" aria-hidden="true"></i></a>` : '',
@@ -279,6 +281,7 @@ function showBootstrapPassengerActionSheet(id) {
   dialog.classList.add('bootstrap-passenger-action-dialog');
   const run = action => { dialog.classList.remove('bootstrap-passenger-action-dialog'); dialog.close(); action(); };
   $('[data-sheet-action="checkin"]')?.addEventListener('click', () => run(() => performFastCheckIn(id)));
+  $('[data-sheet-action="scan-ticket"]')?.addEventListener('click', () => run(() => openTicketScanner(id)));
   $('[data-sheet-action="uncheck"]')?.addEventListener('click', () => run(() => performManualUncheck(id)));
   $('[data-sheet-action="payment"]')?.addEventListener('click', () => run(() => openPaymentDialog('passenger', id)));
   $('[data-sheet-action="confirm-external"]')?.addEventListener('click', () => run(() => openExternalPaymentDialog('passenger', id)));

@@ -249,6 +249,9 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     const scannedBooking=(await expectStatus(baseUrl,200,`/api/trips/${trip.id}/ticket-scan`,{method:'POST',cookie:driver,body:{token:fixedReturnToken}})).value;
     assert.equal(scannedBooking.bookingNumber,fixedReturn.bookingNumber);
     assert.equal(scannedBooking.passengers[0].id,fixedReturn.id);
+    const salesScannedBooking=(await expectStatus(baseUrl,200,`/api/trips/${trip.id}/ticket-scan`,{method:'POST',cookie:sales,body:{token:fixedReturnToken}})).value;
+    assert.equal(salesScannedBooking.bookingNumber,fixedReturn.bookingNumber);
+    await expectStatus(baseUrl,403,`/api/trips/${trip.id}/ticket-scan`,{method:'POST',cookie:otherSales,body:{token:fixedReturnToken}});
     await expectStatus(baseUrl,403,`/api/trips/${trip.id}/ticket-scan`,{method:'POST',cookie:admin,body:{token:fixedReturnToken}});
     await expectStatus(baseUrl,403,`/api/bookings/${encodeURIComponent(fixedReturn.bookingNumber)}/ticket.pdf`,{cookie:spare});
     const duplicateWarning=await expectStatus(baseUrl,409,`/api/trips/${trip.id}/passengers`,{method:'POST',cookie:admin,body:{name:'Fast returpassager',phone:'10101010',pickupStopId:origin.id,destinationStopId:destination.id,paymentStatus:'unpaid',seatNumber:79}});
