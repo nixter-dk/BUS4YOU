@@ -113,8 +113,8 @@ function createQrMatrix(text) {
       }
     }
   };
-  alignment(6, 34);
-  alignment(34, 6);
+  // Version 6 lists alignment coordinates 6 and 34, but combinations that
+  // overlap one of the three finder patterns must be skipped.
   alignment(34, 34);
 
   // Reserve and write format information for L / mask pattern 0.
