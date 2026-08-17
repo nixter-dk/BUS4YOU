@@ -173,6 +173,7 @@ function passengerActionPayment(passenger) {
   if (passenger.paymentStatus === 'cash') {
     if (passenger.paymentLocation === 'bus') return { label: 'Betalt i bussen', tone: 'paid-bus', icon: 'bi-cash-coin', note: 'Registreret hos chaufføren' };
     if (passenger.paymentLocation === 'departure') return { label: 'Betalt ved startstedet', tone: 'paid-prepaid', icon: 'bi-shop-window', note: 'Registreret hos salgschefen' };
+    if (passenger.paymentLocation === 'shop') return { label: 'Betalt i salgsbutik', tone: 'paid-prepaid', icon: 'bi-shop', note: 'Registreret i salgschefens kasse' };
     return { label: 'Betalt på forhånd', tone: 'paid-prepaid', icon: 'bi-check-circle-fill', note: 'Betalingen er registreret' };
   }
   if (passenger.paymentStatus === 'free') return { label: 'Gratis billet', tone: 'free', icon: 'bi-gift-fill', note: 'Ingen betaling skal opkræves' };
@@ -203,6 +204,7 @@ function showBootstrapPassengerActionSheet(id) {
   const attendance = passengerAttendance(passenger);
   const attendanceText = passengerAttendanceLabel(passenger);
   const payment = passengerActionPayment(passenger);
+  const canOperate = typeof salesManagerCanOperateCurrentTrip !== 'function' || salesManagerCanOperateCurrentTrip();
   const canCollectPayment = ['unpaid', 'pay_dk', 'pay_mk'].includes(passenger.paymentStatus) && !passenger.externalPaymentConfirmedAt;
   const canConfirmExternal = ['admin', 'sales_manager'].includes(state.user.role) && ['pay_dk', 'pay_mk'].includes(passenger.paymentStatus) && !passenger.externalPaymentConfirmedAt;
   const seatLabel = passenger.extraSeatNumber ? `${passenger.seatNumber} + ${passenger.extraSeatNumber}` : passenger.seatNumber;
@@ -218,7 +220,9 @@ function showBootstrapPassengerActionSheet(id) {
     : '';
 
   let primaryAction;
-  if (passenger.checkedIn) {
+  if (!canOperate) {
+    primaryAction = `<div class="passenger-primary-action sales-view-only"><span><i class="bi bi-shield-lock-fill" aria-hidden="true"></i></span><span><strong>Check-in udføres af turens personale</strong><small>Du kan stadig rette bookingen og registrere betaling.</small></span></div>`;
+  } else if (passenger.checkedIn) {
     primaryAction = `<button type="button" class="btn passenger-primary-action uncheck" data-sheet-action="uncheck"><span><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i></span><span><strong>Fjern check-in</strong><small>Flyt passageren tilbage til afventer</small></span></button>`;
   } else {
     let title = attendance === 'no_show' ? 'Check ind alligevel' : 'Check ind passager';
@@ -238,7 +242,7 @@ function showBootstrapPassengerActionSheet(id) {
     canConfirmExternal ? passengerActionButton('confirm-external', 'bi-patch-check-fill', `Bekræft betaling i ${passenger.paymentStatus === 'pay_mk' ? 'MK' : 'DK'}`, 'Gem beløb, valuta, tidspunkt og medarbejder', 'external') : '',
     canCollectPayment ? passengerActionButton('payment', 'bi-cash-coin', 'Registrer betaling', 'Kontant betaling i DKK eller EUR', 'payment') : '',
     passenger.phone ? `<a class="passenger-action-control btn call" href="tel:${esc(passenger.phone)}"><span class="passenger-action-control-icon"><i class="bi bi-telephone-fill" aria-hidden="true"></i></span><span><strong>Ring til passager</strong><small>${esc(passenger.phone)}</small></span><i class="bi bi-chevron-right passenger-action-chevron" aria-hidden="true"></i></a>` : '',
-    !passenger.checkedIn && attendance !== 'no_show' ? passengerActionButton('noshow', 'bi-person-x-fill', 'Markér udeblevet', 'Passageren mødte ikke op', 'warning') : '',
+    canOperate && !passenger.checkedIn && attendance !== 'no_show' ? passengerActionButton('noshow', 'bi-person-x-fill', 'Markér udeblevet', 'Passageren mødte ikke op', 'warning') : '',
     passenger.ticketType === 'return_open' && passenger.returnStatus === 'open' ? passengerActionButton('book-return', 'bi-arrow-left-right', 'Book åben retur', 'Vælg returtur og sæde', 'return') : '',
     passenger.bookingNumber ? passengerActionButton('ticket-pdf', 'bi-file-earmark-pdf-fill', 'Hent PDF-billet', 'Vis, download eller genudskriv hele bookingen', 'ticket') : '',
     passengerActionButton('details', 'bi-card-list', 'Alle detaljer', 'Billet, betaling og hændelser'),

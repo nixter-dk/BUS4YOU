@@ -80,8 +80,8 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(spareDriver.hasPortrait, true);
     const portrait = await expectStatus(baseUrl, 200, `/api/drivers/${spareDriver.id}/portrait`, { cookie: admin });
     assert.equal(portrait.response.headers.get('content-type'), 'image/png');
-    const salesManager = (await expectStatus(baseUrl, 201, '/api/sales-managers', { method: 'POST', cookie: admin, body: { name: 'Test Salgschef', email: 'testsalg@albaturist.dk', password: 'testpass1234' } })).value;
-    await expectStatus(baseUrl, 201, '/api/sales-managers', { method: 'POST', cookie: admin, body: { name: 'Anden Salgschef', email: 'andensalg@albaturist.dk', password: 'andenpass1234' } });
+    const salesManager = (await expectStatus(baseUrl, 201, '/api/sales-managers', { method: 'POST', cookie: admin, body: { name: 'Test Salgschef', email: 'testsalg@albaturist.dk', password: 'testpass1234', salesOfficeName: 'København-kontoret', salesOfficeCountry: 'DK' } })).value;
+    const otherSalesManager = (await expectStatus(baseUrl, 201, '/api/sales-managers', { method: 'POST', cookie: admin, body: { name: 'Anden Salgschef', email: 'andensalg@albaturist.dk', password: 'andenpass1234', salesOfficeName: 'Berlin-kontoret', salesOfficeCountry: 'DE' } })).value;
     const salesLogin = await expectStatus(baseUrl, 200, '/api/login', { method: 'POST', body: { email: 'testsalg@albaturist.dk', password: 'testpass1234' } });
     const sales = cookieFrom(salesLogin.response);
     const otherSalesLogin = await expectStatus(baseUrl, 200, '/api/login', { method: 'POST', body: { email: 'andensalg@albaturist.dk', password: 'andenpass1234' } });
@@ -91,6 +91,8 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     const salesBootstrap = (await expectStatus(baseUrl, 200, '/api/bootstrap', { cookie: sales })).value;
     assert.equal(salesBootstrap.buses.length, 2);
     assert.ok(salesBootstrap.drivers.some(candidate => candidate.id === 2));
+    assert.equal(salesBootstrap.user.salesOfficeName, 'København-kontoret');
+    assert.equal(salesBootstrap.user.salesOfficeCountry, 'DK');
     assert.equal((await expectStatus(baseUrl, 200, '/api/profile/language', { method: 'PATCH', cookie: admin, body: { language: 'en' } })).value.language, 'en');
     assert.equal((await expectStatus(baseUrl, 200, '/api/profile/language', { method: 'PATCH', cookie: driver, body: { language: 'sq' } })).value.language, 'sq');
     assert.equal((await expectStatus(baseUrl, 200, '/api/profile/language', { method: 'PATCH', cookie: sales, body: { language: 'de' } })).value.language, 'de');
@@ -140,7 +142,7 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
         salesManagerId: 999999
       }
     })).value;
-    assert.equal(trip.salesManagerId, salesManager.id);
+    assert.equal(trip.salesManagerId, null);
     assert.equal(trip.seatCount, 84);
     assert.equal(trip.durationMinutes, 720);
     assert.equal(trip.destinationArrivalAt, validDestinationArrivalAt.toISOString());
@@ -161,6 +163,11 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(scheduledTrip.timetable[1].arrivalAt, timetable[1].arrivalAt);
     assert.equal(scheduledTrip.destinationArrivalAt, timetable[2].arrivalAt);
     assert.equal(scheduledTrip.timetable[2].departureAt, timetable[2].arrivalAt);
+    const otherSalesTrips=(await expectStatus(baseUrl,200,'/api/bootstrap',{cookie:otherSales})).value.trips;
+    assert.ok(otherSalesTrips.some(candidate=>candidate.id===trip.id));
+    const assignedSalesManager=(await expectStatus(baseUrl,200,`/api/trips/${trip.id}`,{method:'PATCH',cookie:admin,body:{salesManagerId:salesManager.id}})).value;
+    assert.equal(assignedSalesManager.salesManagerOnDutyId,salesManager.id);
+    assert.equal(assignedSalesManager.salesManagerOnDuty,'Test Salgschef');
     await expectStatus(baseUrl, 409, `/api/stops/${extraStop.id}`, { method: 'DELETE', cookie: admin });
 
     await expectStatus(baseUrl, 403, `/api/trips/${trip.id}`, { method: 'PATCH', cookie: sales, body: { departureChecklistItem: 'vehicle_ready', checked: true } });
@@ -337,9 +344,14 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Gratis Passager', phone: '33333333', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'free', freeTicketReason: 'Test', seatNumber: 2 } });
     await expectStatus(baseUrl, 409, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Dublet', phone: '44444444', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'unpaid', seatNumber: 1 } });
     await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: driver, body: { name: 'Ikke tilladt', phone: '55555555', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'unpaid', seatNumber: 3 } });
-    const intermediateStopSale = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: sales, body: { name: 'Opsamling undervejs', phone: '55555555', pickupStopId: extraStop.id, destinationStopId: destination.id, paymentStatus: 'pay_dk', seatNumber: 3 } })).value;
+    const intermediateStopSale = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: otherSales, body: { name: 'Opsamling undervejs', phone: '55555555', pickupStopId: extraStop.id, destinationStopId: destination.id, paymentStatus: 'cash', paymentCurrency: 'EUR', cashAmount: 45, seatNumber: 3 } })).value;
     assert.equal(intermediateStopSale.pickupStopId, extraStop.id);
-    await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: sales, body: { id: intermediateStopSale.id, deletionReason: 'Fjerner testregistreringen igen' } });
+    assert.equal(intermediateStopSale.paymentLocation, 'shop');
+    assert.equal(intermediateStopSale.cashHolderUserId, otherSalesManager.id);
+    assert.equal(intermediateStopSale.salesOfficeName, 'Berlin-kontoret');
+    assert.equal(intermediateStopSale.salesOfficeCountry, 'DE');
+    await expectStatus(baseUrl,403,`/api/trips/${trip.id}/passengers`,{method:'PATCH',cookie:otherSales,body:{id:intermediateStopSale.id,checkedIn:true}});
+    await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'DELETE', cookie: otherSales, body: { id: intermediateStopSale.id, deletionReason: 'Fjerner testregistreringen igen' } });
     await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: sales, body: { name: 'Gratis fra salg', phone: '55555555', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'free', seatNumber: 3 } });
     const adminExtraSeatTicket = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/passengers`, { method: 'POST', cookie: admin, body: { name: 'Administrator ekstrasaede', phone: '55555557', pickupStopId: origin.id, destinationStopId: destination.id, paymentStatus: 'cash', paymentCurrency: 'DKK', cashAmount: 90, seatNumber: 9, extraSeatNumber: 10, extraSeatAmount: 50, extraSeatCurrency: 'DKK', extraSeatFree: false } })).value;
     assert.equal(adminExtraSeatTicket.extraSeatNumber, 10);
@@ -422,7 +434,12 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     const tripAfterDeletions = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}`, { cookie: admin })).value;
     assert.ok(tripAfterDeletions.trip.deletionHistory.some(event => event.kind === 'passenger'));
     assert.equal(tripAfterDeletions.trip.deletionHistory.at(-1).kind, 'baggage');
-    await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: sales, body: { senderName: 'Forkert bagage', recipientName: 'Modtager C', phone: '77777777', pickupStopId: extraStop.id, destinationStopId: destination.id, pieces: 1, paymentStatus: 'cash', cashAmount: 50, paymentCurrency: 'DKK' } });
+    const remoteSalesBaggage=(await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: otherSales, body: { senderName: 'Bagage fra Berlin', recipientName: 'Modtager C', phone: '77777777', pickupStopId: extraStop.id, destinationStopId: destination.id, pieces: 1, paymentStatus: 'cash', cashAmount: 50, paymentCurrency: 'DKK', photoName: 'berlin.png', photoType: 'image/png', photoData: baggagePhotoData } })).value;
+    assert.equal(remoteSalesBaggage.paymentLocation,'shop');
+    assert.equal(remoteSalesBaggage.cashHolderUserId,otherSalesManager.id);
+    assert.equal(remoteSalesBaggage.salesOfficeCountry,'DE');
+    await expectStatus(baseUrl,403,`/api/trips/${trip.id}/baggage`,{method:'PATCH',cookie:otherSales,body:{id:remoteSalesBaggage.id,status:'received'}});
+    await expectStatus(baseUrl,200,`/api/trips/${trip.id}/baggage`,{method:'DELETE',cookie:otherSales,body:{id:remoteSalesBaggage.id,deletionReason:'Fjerner global bagagetest'}});
     await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: sales, body: { senderName: 'Bagage ved start', recipientName: 'Modtager D', phone: '88888888', pickupStopId: origin.id, destinationStopId: destination.id, pieces: 1, description: 'Pakke', paymentStatus: 'cash', cashAmount: 50, paymentCurrency: 'DKK', photoName: 'pakke.png', photoType: 'image/png', photoData: baggagePhotoData } });
     await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: driver, body: { senderName: 'Ubetalt i bus', recipientName: 'Modtager E', phone: '89898989', pickupStopId: origin.id, destinationStopId: destination.id, pieces: 1, paymentStatus: 'unpaid', photoName: 'ubetalt.png', photoType: 'image/png', photoData: baggagePhotoData } });
     const baggageInBus = (await expectStatus(baseUrl, 201, `/api/trips/${trip.id}/baggage`, { method: 'POST', cookie: driver, body: { senderName: 'Bagage i bussen', recipientName: 'Modtager F', phone: '89898989', pickupStopId: origin.id, destinationStopId: destination.id, pieces: 1, description: 'Taske', paymentStatus: 'cash', cashAmount: 30, paymentCurrency: 'DKK', photoName: 'taske.png', photoType: 'image/png', photoData: baggagePhotoData } })).value;
@@ -450,7 +467,7 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.equal(manuallyUnchecked.paymentStatus, 'pay_dk');
     const checkedInAgain = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'PATCH', cookie: sales, body: { id: unpaidPassenger.id, checkedIn: true } })).value;
     assert.equal(checkedInAgain.checkedIn, true);
-    await expectStatus(baseUrl, 403, `/api/trips/${trip.id}/passengers`, { method: 'PATCH', cookie: sales, body: { id: unpaidPassenger.id, paymentStatus: 'cash', cashAmount: 500, paymentCurrency: 'DKK', paymentLocation: 'departure' } });
+    await expectStatus(baseUrl, 403, `/api/trips/${trip.id}`, { method: 'PATCH', cookie: otherSales, body: { completedStopId: extraStop.id } });
     const completedExtraStop = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}`, { method: 'PATCH', cookie: sales, body: { completedStopId: extraStop.id } })).value;
     assert.ok(completedExtraStop.completedStopIds.includes(extraStop.id));
     const paidPassenger = (await expectStatus(baseUrl, 200, `/api/trips/${trip.id}/passengers`, { method: 'PATCH', cookie: driver, body: { id: unpaidPassenger.id, paymentStatus: 'cash', cashAmount: 500, paymentCurrency: 'DKK', paymentLocation: 'bus' } })).value;
