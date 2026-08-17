@@ -1783,3 +1783,60 @@ renderTrip=function(){
   $('[data-notification-tab]').onclick=()=>{state.tab='notifications';renderTrip()};
   if(state.tab==='notifications'){$$('.tab').forEach(tab=>tab.classList.remove('active'));$('[data-notification-tab]').classList.add('active');renderNotificationDrafts()}
 };
+
+// A ticket QR contains only a signed booking token. The authenticated server
+// resolves it against the current trip before the assigned driver can check in.
+let activeTicketScannerStream=null,activeTicketScannerFrame=null;
+function stopTicketScanner(){
+  if(activeTicketScannerFrame)cancelAnimationFrame(activeTicketScannerFrame);activeTicketScannerFrame=null;
+  activeTicketScannerStream?.getTracks().forEach(track=>track.stop());activeTicketScannerStream=null;
+}
+function scannedTicketToken(value){
+  const input=String(value||'').trim();if(!input)return'';
+  try{const url=new URL(input);return decodeURIComponent(url.pathname.match(/^\/ticket\/([^/]+)$/)?.[1]||input)}catch(_){return input}
+}
+function scannerPaymentLabel(passenger){
+  if(passenger.paymentStatus==='cash')return'Betalt';if(passenger.paymentStatus==='free')return'Gratis billet';
+  if(passenger.paymentStatus==='return_included'||passenger.paymentStatus==='group_included')return'Betaling inkluderet';
+  if(passenger.paymentStatus==='pay_dk')return'Betaler i DK';if(passenger.paymentStatus==='pay_mk')return'Betaler i MK';return'Ikke betalt';
+}
+async function checkInScannedPassenger(token,id,button){
+  button.disabled=true;button.innerHTML='<i class="bi bi-hourglass-split"></i> Gemmer…';
+  try{
+    const result=await api(`/api/trips/${state.trip.trip.id}/ticket-scan`,{method:'POST',body:JSON.stringify({token,passengerId:id})}),local=state.trip.passengers.find(item=>item.id===result.passenger.id);
+    if(local)Object.assign(local,result.passenger);navigator.vibrate?.(120);
+    button.className='btn btn-success';button.innerHTML=`<i class="bi bi-check2-circle"></i> ${result.alreadyCheckedIn?'Allerede checket ind':'Checket ind'}`;
+    const row=button.closest('.ticket-scan-passenger');row?.classList.add('is-checked');row?.querySelector('.ticket-scan-status')?.replaceChildren(document.createTextNode('Checket ind'));
+    toast(result.alreadyCheckedIn?'Passageren var allerede checket ind':'Passageren er checket ind med QR-koden');
+  }catch(error){button.disabled=false;button.innerHTML='<i class="bi bi-person-check"></i> Check ind';toast(error.message)}
+}
+async function resolveScannedTicket(value){
+  const token=scannedTicketToken(value),resultHost=$('#ticketScanResult'),status=$('#ticketScanStatus');if(!token)return;
+  stopTicketScanner();status.className='ticket-scan-status checking';status.innerHTML='<i class="bi bi-hourglass-split"></i><span>Kontrollerer billetten…</span>';
+  try{
+    const result=await api(`/api/trips/${state.trip.trip.id}/ticket-scan`,{method:'POST',body:JSON.stringify({token})});
+    status.className='ticket-scan-status valid';status.innerHTML=`<i class="bi bi-shield-check"></i><span><strong>Gyldig billet</strong><small>${esc(result.bookingNumber)} · ${result.passengers.length} ${result.passengers.length===1?'passager':'passagerer'}</small></span>`;
+    resultHost.innerHTML=result.passengers.map(passenger=>`<article class="ticket-scan-passenger ${passenger.checkedIn?'is-checked':''}"><div class="ticket-scan-seat"><small>SÆDE</small><strong>${passenger.seatNumber}</strong></div><div><strong>${esc(passenger.name)}</strong><span>${esc(stopName(passenger.pickupStopId))} → ${esc(stopName(passenger.destinationStopId))}</span><small>${esc(scannerPaymentLabel(passenger))} · <b class="ticket-scan-status">${passenger.checkedIn?'Checket ind':passenger.attendanceStatus==='no_show'?'Tidligere udeblevet':'Afventer'}</b></small></div><button class="btn ${passenger.checkedIn?'btn-outline-success':'btn-primary'}" data-scanned-checkin="${passenger.id}" ${passenger.checkedIn?'disabled':''}><i class="bi ${passenger.checkedIn?'bi-check2-circle':'bi-person-check'}"></i> ${passenger.checkedIn?'Allerede inde':'Check ind'}</button></article>`).join('');
+    $$('[data-scanned-checkin]').forEach(button=>button.onclick=()=>checkInScannedPassenger(token,Number(button.dataset.scannedCheckin),button));
+  }catch(error){status.className='ticket-scan-status invalid';status.innerHTML=`<i class="bi bi-x-octagon"></i><span><strong>Billetten kunne ikke bruges</strong><small>${esc(error.message)}</small></span>`;resultHost.innerHTML=''}
+}
+async function startTicketCamera(){
+  const video=$('#ticketScannerVideo'),status=$('#ticketScanStatus'),startButton=$('#startTicketCamera');
+  if(!navigator.mediaDevices?.getUserMedia){status.className='ticket-scan-status invalid';status.textContent='Kamera er ikke tilgængeligt på denne enhed';return}
+  if(!('BarcodeDetector' in window)){status.className='ticket-scan-status invalid';status.innerHTML='<i class="bi bi-phone"></i><span><strong>Automatisk QR-scanning understøttes ikke af browseren</strong><small>Brug Chrome på chaufførtelefonen, eller indsæt billetlinket nedenfor.</small></span>';return}
+  try{
+    startButton.disabled=true;activeTicketScannerStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});video.srcObject=activeTicketScannerStream;await video.play();startButton.hidden=true;
+    const detector=new BarcodeDetector({formats:['qr_code']});status.className='ticket-scan-status scanning';status.innerHTML='<i class="bi bi-camera"></i><span><strong>Kameraet er klar</strong><small>Hold QR-koden roligt inden for rammen</small></span>';
+    const detect=async()=>{if(!activeTicketScannerStream)return;try{const codes=await detector.detect(video);if(codes[0]?.rawValue){await resolveScannedTicket(codes[0].rawValue);return}}catch(_){}activeTicketScannerFrame=requestAnimationFrame(detect)};detect();
+  }catch(error){startButton.disabled=false;status.className='ticket-scan-status invalid';status.innerHTML=`<i class="bi bi-camera-video-off"></i><span><strong>Kameraet kunne ikke åbnes</strong><small>${esc(error.message)}</small></span>`}
+}
+function openTicketScanner(){
+  stopTicketScanner();$('#modalBody').innerHTML=`<section class="ticket-scanner"><header><i class="bi bi-qr-code-scan"></i><small>MOBIL CHECK-IN</small><h2>Scan passagerens billet</h2><p>QR-koden åbner kun bookingen på denne tur. Kontrollér navnet, før du checker ind.</p></header><div class="ticket-scanner-camera"><video id="ticketScannerVideo" playsinline muted></video><span class="ticket-scanner-frame"></span><button class="btn btn-primary" id="startTicketCamera"><i class="bi bi-camera-fill"></i> Start kamera</button></div><div class="ticket-scan-status idle" id="ticketScanStatus"><i class="bi bi-shield-lock"></i><span><strong>Klar til sikker scanning</strong><small>Der gemmes hvem og hvornår check-in blev udført</small></span></div><div id="ticketScanResult" class="ticket-scan-results"></div><details class="ticket-scan-manual"><summary>Kan kameraet ikke læse koden?</summary><form id="manualTicketScan"><label>Indsæt billetlink eller QR-token<input name="token" autocomplete="off" required></label><button class="btn btn-outline-primary"><i class="bi bi-search"></i> Find billet</button></form></details></section>`;
+  const modal=$('#modal');modal.onclose=()=>{stopTicketScanner();modal.onclose=null;if(state.trip)renderTrip()};$('#startTicketCamera').onclick=startTicketCamera;$('#manualTicketScan').onsubmit=event=>{event.preventDefault();resolveScannedTicket(event.target.token.value)};modal.showModal();
+}
+const renderCheckInBeforeQrScanner=renderCheckInMode;
+renderCheckInMode=function(){
+  renderCheckInBeforeQrScanner();if(state.user.role!=='driver'||!$('.checkin-command'))return;
+  $('.checkin-command').insertAdjacentHTML('afterend','<button class="ticket-scan-launch" id="ticketScanLaunch"><i class="bi bi-qr-code-scan"></i><span><strong>Scan billet</strong><small>Åbn kamera og check passageren ind</small></span><b><i class="bi bi-camera-fill"></i></b></button>');
+  $('#ticketScanLaunch').onclick=openTicketScanner;
+};

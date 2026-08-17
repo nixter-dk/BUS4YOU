@@ -1,0 +1,669 @@
+/* BusOps professional UI — Phase 1
+   Design system, app shell, navigation, header and dashboard. */
+
+:root {
+  --busops-navy: #0b1730;
+  --busops-navy-2: #10213f;
+  --busops-navy-surface: #17345e;
+  --busops-primary: #4567e8;
+  --busops-primary-hover: #3656d2;
+  --busops-primary-soft: #eef2ff;
+  --busops-app-bg: #f5f7fb;
+  --busops-card: #ffffff;
+  --busops-text: #182235;
+  --busops-muted: #748096;
+  --busops-border: #e7ebf2;
+  --busops-success: #119b6b;
+  --busops-warning: #d88b11;
+  --busops-danger: #d9534f;
+  --busops-radius-sm: 10px;
+  --busops-radius: 16px;
+  --busops-radius-lg: 20px;
+  --busops-shadow-sm: 0 3px 14px rgba(16, 33, 63, 0.055);
+  --busops-shadow: 0 14px 38px rgba(16, 33, 63, 0.075);
+  --busops-sidebar-width: 264px;
+  --navy: var(--busops-navy);
+  --navy2: var(--busops-navy-2);
+  --blue: var(--busops-primary);
+  --sky: var(--busops-primary-soft);
+  --ink: var(--busops-text);
+  --muted: var(--busops-muted);
+  --line: var(--busops-border);
+  --green: var(--busops-success);
+  --amber: var(--busops-warning);
+  --red: var(--busops-danger);
+  --bg: var(--busops-app-bg);
+}
+
+body.busops-phase1 {
+  color: var(--busops-text);
+  background: var(--busops-app-bg);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+body.busops-phase1 [hidden] { display: none !important; }
+body.busops-phase1 button,
+body.busops-phase1 a,
+body.busops-phase1 input,
+body.busops-phase1 select { -webkit-tap-highlight-color: transparent; }
+
+body.busops-phase1 button:focus-visible,
+body.busops-phase1 a:focus-visible,
+body.busops-phase1 input:focus-visible,
+body.busops-phase1 select:focus-visible,
+body.busops-phase1 textarea:focus-visible {
+  outline: 3px solid rgba(69, 103, 232, 0.24);
+  outline-offset: 2px;
+}
+
+/* App shell */
+body.busops-phase1 #app {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: var(--busops-sidebar-width) minmax(0, 1fr);
+  background: var(--busops-app-bg);
+}
+
+body.busops-phase1 .sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 40;
+  width: var(--busops-sidebar-width);
+  padding: 24px 17px 18px;
+  color: #c6d2e4;
+  background: var(--busops-navy);
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+body.busops-phase1 .phase1-brand {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin: 0 4px 31px;
+}
+
+body.busops-phase1 .phase1-logo-plate {
+  min-width: 0;
+  height: 52px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16);
+  display: grid;
+  place-items: center;
+}
+
+body.busops-phase1 .phase1-official-logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
+
+body.busops-phase1 .phase1-brand-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+body.busops-phase1 .phase1-brand-copy strong {
+  color: #fff;
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+body.busops-phase1 .phase1-brand-copy small {
+  color: #8293ad;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+body.busops-phase1 .phase1-nav-label {
+  margin: 0 14px 10px;
+  color: #6f829f;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+body.busops-phase1 .sidebar nav {
+  display: grid;
+  gap: 5px;
+  min-height: 0;
+  padding-right: 2px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.12) transparent;
+}
+
+body.busops-phase1 .sidebar .nav {
+  position: relative;
+  width: 100%;
+  min-height: 46px;
+  margin: 0;
+  padding: 10px 13px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  color: #9eacc1;
+  background: transparent;
+  box-shadow: none;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 650;
+  transition: color .16s ease, background-color .16s ease, border-color .16s ease;
+}
+
+body.busops-phase1 .sidebar .nav:hover {
+  color: #eef3fc;
+  background: rgba(255, 255, 255, 0.055);
+  transform: none;
+}
+
+body.busops-phase1 .sidebar .nav.active {
+  color: #fff;
+  border-color: rgba(115, 146, 255, 0.2);
+  background: rgba(69, 103, 232, 0.19);
+  box-shadow: inset 3px 0 #6f8cff;
+}
+
+body.busops-phase1 .sidebar .nav span { margin: 0; }
+body.busops-phase1 .phase1-nav-icon,
+body.busops-phase1 .sidebar .nav-bi {
+  width: 22px;
+  color: #8495b0;
+  font-size: 16px;
+  text-align: center;
+}
+body.busops-phase1 .sidebar .nav.active .phase1-nav-icon,
+body.busops-phase1 .sidebar .nav.active .nav-bi { color: #87a0ff; }
+
+body.busops-phase1 .sidebar-bottom {
+  margin-top: auto;
+  padding: 17px 5px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.085);
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 40px;
+  gap: 10px;
+  align-items: center;
+}
+
+body.busops-phase1 .sidebar-bottom .avatar {
+  width: 38px;
+  height: 38px;
+  color: #fff;
+  background: var(--busops-navy-surface);
+  border: 1px solid rgba(255,255,255,.1);
+  box-shadow: none;
+}
+
+body.busops-phase1 .sidebar-bottom strong {
+  overflow: hidden;
+  color: #f5f7fb;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.busops-phase1 .sidebar-bottom small {
+  overflow: hidden;
+  color: #7f91ac;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.busops-phase1 #logout {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  color: #91a0b6;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+}
+
+body.busops-phase1 #logout:hover { color: #fff; background: rgba(255,255,255,.07); }
+
+body.busops-phase1 .content {
+  grid-column: 2;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 30px clamp(24px, 3.2vw, 54px) 48px;
+  overflow-x: clip;
+}
+
+body.busops-phase1 .content > header.phase1-header {
+  width: min(100%, 1500px);
+  margin: 0 auto 27px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+}
+
+body.busops-phase1 .phase1-heading { min-width: 0; }
+body.busops-phase1 .phase1-heading #eyebrow {
+  color: var(--busops-primary);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .17em;
+}
+body.busops-phase1 .phase1-heading h1 {
+  margin: 3px 0 2px;
+  color: var(--busops-text);
+  font-size: clamp(25px, 2.2vw, 31px);
+  line-height: 1.15;
+  letter-spacing: -.035em;
+}
+body.busops-phase1 .phase1-heading p {
+  margin: 0;
+  color: var(--busops-muted);
+  font-size: 12px;
+}
+
+body.busops-phase1 .phase1-header-actions { flex: none; }
+body.busops-phase1 #newTrip {
+  min-height: 44px;
+  padding: 10px 17px;
+  border-radius: 11px;
+  background: var(--busops-primary);
+  box-shadow: 0 8px 20px rgba(69, 103, 232, .2);
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  transition: background-color .16s ease, transform .16s ease;
+}
+body.busops-phase1 #newTrip:hover { background: var(--busops-primary-hover); transform: translateY(-1px); }
+body.busops-phase1 #view { width: min(100%, 1500px); margin: 0 auto; min-width: 0; }
+
+/* Dashboard introduction */
+body.busops-phase1 .dashboard-welcome {
+  min-height: 0;
+  margin: 0 0 18px;
+  padding: 18px 21px;
+  border: 1px solid var(--busops-border);
+  border-radius: var(--busops-radius);
+  color: var(--busops-text);
+  background: var(--busops-card);
+  box-shadow: var(--busops-shadow-sm);
+}
+
+body.busops-phase1 .dashboard-welcome::before,
+body.busops-phase1 .dashboard-welcome::after { display: none; }
+body.busops-phase1 .dashboard-welcome h2 { margin: 2px 0 3px; color: var(--busops-text); font-size: 20px; }
+body.busops-phase1 .dashboard-welcome p { margin: 0; color: var(--busops-muted); font-size: 11px; }
+body.busops-phase1 .dashboard-welcome > div > small { color: var(--busops-primary); font-size: 9px; font-weight: 800; }
+body.busops-phase1 .dashboard-live {
+  min-height: 32px;
+  padding: 7px 11px;
+  border: 1px solid #d9f2e8;
+  color: #157457;
+  background: #f0fbf7;
+  box-shadow: none;
+}
+
+/* KPI cards */
+body.busops-phase1 .phase1-dashboard-overview { margin-bottom: 19px; }
+body.busops-phase1 .phase1-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 15px;
+  margin-bottom: 18px;
+}
+
+body.busops-phase1 .phase1-kpi-card {
+  position: relative;
+  min-width: 0;
+  min-height: 151px;
+  padding: 18px 19px 16px;
+  border: 1px solid var(--busops-border);
+  border-radius: var(--busops-radius);
+  background: var(--busops-card);
+  box-shadow: var(--busops-shadow-sm);
+  overflow: hidden;
+}
+
+body.busops-phase1 .phase1-kpi-card::after {
+  content: "";
+  position: absolute;
+  right: -24px;
+  bottom: -32px;
+  width: 94px;
+  height: 94px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: .035;
+  pointer-events: none;
+}
+
+body.busops-phase1 .phase1-kpi-top { display: flex; justify-content: space-between; align-items: center; }
+body.busops-phase1 .phase1-kpi-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+}
+body.busops-phase1 .phase1-kpi-signal { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .55; }
+body.busops-phase1 .phase1-kpi-card > strong {
+  display: block;
+  margin-top: 12px;
+  color: var(--busops-text);
+  font-size: 27px;
+  line-height: 1;
+  letter-spacing: -.045em;
+}
+body.busops-phase1 .phase1-kpi-card h3 { margin: 6px 0 2px; color: var(--busops-text); font-size: 12px; font-weight: 750; }
+body.busops-phase1 .phase1-kpi-card p { margin: 0; color: var(--busops-muted); font-size: 9px; }
+body.busops-phase1 .phase1-kpi-blue { color: #4167df; }
+body.busops-phase1 .phase1-kpi-blue .phase1-kpi-icon { color: #4167df; background: #edf2ff; }
+body.busops-phase1 .phase1-kpi-violet { color: #7656d8; }
+body.busops-phase1 .phase1-kpi-violet .phase1-kpi-icon { color: #7656d8; background: #f3efff; }
+body.busops-phase1 .phase1-kpi-green { color: #148c67; }
+body.busops-phase1 .phase1-kpi-green .phase1-kpi-icon { color: #148c67; background: #eaf9f3; }
+body.busops-phase1 .phase1-kpi-amber { color: #c87b0b; }
+body.busops-phase1 .phase1-kpi-amber .phase1-kpi-icon { color: #c87b0b; background: #fff5e6; }
+
+/* Next departures */
+body.busops-phase1 .phase1-departures-panel {
+  border: 1px solid var(--busops-border);
+  border-radius: var(--busops-radius-lg);
+  background: var(--busops-card);
+  box-shadow: var(--busops-shadow);
+  overflow: hidden;
+}
+
+body.busops-phase1 .phase1-departures-panel > header {
+  min-height: 72px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--busops-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+body.busops-phase1 .phase1-departures-panel > header small { color: var(--busops-primary); font-size: 8px; font-weight: 850; letter-spacing: .13em; }
+body.busops-phase1 .phase1-departures-panel > header h2 { margin: 2px 0 0; font-size: 17px; letter-spacing: -.02em; }
+body.busops-phase1 .phase1-departures-panel > header > span {
+  padding: 6px 9px;
+  border: 1px solid #e2e7f7;
+  border-radius: 999px;
+  color: #5e6a7d;
+  background: #f8f9fd;
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+body.busops-phase1 .phase1-departure-list { display: grid; }
+body.busops-phase1 .phase1-departure-row {
+  width: 100%;
+  min-height: 86px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--busops-border);
+  color: var(--busops-text);
+  background: #fff;
+  display: grid;
+  grid-template-columns: 54px minmax(220px, 1.5fr) minmax(140px, .8fr) 76px minmax(105px, .65fr) auto 18px;
+  gap: 16px;
+  align-items: center;
+  text-align: left;
+  transition: background-color .15s ease;
+}
+body.busops-phase1 .phase1-departure-row:last-child { border-bottom: 0; }
+body.busops-phase1 .phase1-departure-row:hover { background: #f8faff; }
+body.busops-phase1 .phase1-departure-date {
+  width: 49px;
+  height: 56px;
+  border: 1px solid #dfe6fb;
+  border-radius: 12px;
+  color: var(--busops-primary);
+  background: var(--busops-primary-soft);
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+body.busops-phase1 .phase1-departure-date small { font-size: 8px; font-weight: 850; text-transform: uppercase; }
+body.busops-phase1 .phase1-departure-date strong { font-size: 18px; line-height: 1.05; }
+body.busops-phase1 .phase1-departure-main { min-width: 0; display: grid; gap: 3px; }
+body.busops-phase1 .phase1-departure-main > small { color: var(--busops-muted); font-size: 8px; font-weight: 650; text-transform: capitalize; }
+body.busops-phase1 .phase1-departure-main > strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+body.busops-phase1 .phase1-departure-main > span { min-width: 0; color: #526074; display: flex; gap: 6px; align-items: center; font-size: 9px; white-space: nowrap; }
+body.busops-phase1 .phase1-departure-main > span .bi-arrow-right { color: #9aa5b5; }
+body.busops-phase1 .phase1-departure-driver,
+body.busops-phase1 .phase1-departure-count,
+body.busops-phase1 .phase1-departure-checkin { min-width: 0; display: grid; gap: 3px; }
+body.busops-phase1 .phase1-departure-driver small,
+body.busops-phase1 .phase1-departure-count small,
+body.busops-phase1 .phase1-departure-checkin small { color: var(--busops-muted); font-size: 8px; }
+body.busops-phase1 .phase1-departure-driver strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+body.busops-phase1 .phase1-departure-driver strong .bi { margin-right: 5px; color: #7c8aa0; }
+body.busops-phase1 .phase1-departure-count strong,
+body.busops-phase1 .phase1-departure-checkin strong { font-size: 13px; }
+body.busops-phase1 .phase1-departure-checkin > i { display: block; width: 100%; height: 4px; border-radius: 4px; background: #e9edf4; overflow: hidden; }
+body.busops-phase1 .phase1-departure-checkin > i > em { display: block; height: 100%; border-radius: inherit; background: var(--busops-success); }
+body.busops-phase1 .phase1-status {
+  min-height: 26px;
+  padding: 6px 9px;
+  border: 1px solid #dfe5ed;
+  border-radius: 999px;
+  color: #59677b;
+  background: #f7f9fb;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+body.busops-phase1 .phase1-status-ready,
+body.busops-phase1 .phase1-status-checkin { border-color: #d6e0ff; color: #3f5ecc; background: #eff3ff; }
+body.busops-phase1 .phase1-status-underway { border-color: #cdeadd; color: #147858; background: #edf9f4; }
+body.busops-phase1 .phase1-status-arrived,
+body.busops-phase1 .phase1-status-completed { border-color: #dfe5ed; color: #637084; background: #f5f7fa; }
+body.busops-phase1 .phase1-status-cancelled { border-color: #f1d7d5; color: #b84945; background: #fff3f2; }
+body.busops-phase1 .phase1-departure-arrow { color: #9ca8b9; font-size: 12px; }
+body.busops-phase1 .phase1-departure-empty { min-height: 190px; padding: 30px; color: var(--busops-muted); display: grid; place-items: center; align-content: center; gap: 5px; text-align: center; }
+body.busops-phase1 .phase1-departure-empty > span { width: 43px; height: 43px; margin-bottom: 3px; border-radius: 13px; color: var(--busops-primary); background: var(--busops-primary-soft); display: grid; place-items: center; font-size: 18px; }
+body.busops-phase1 .phase1-departure-empty strong { color: var(--busops-text); font-size: 13px; }
+body.busops-phase1 .phase1-departure-empty p { margin: 0; font-size: 10px; }
+
+/* Existing dashboard work areas remain functional, but share the new visual language. */
+body.busops-phase1 .live-trip-panel,
+body.busops-phase1 .operational-alert-center,
+body.busops-phase1 .dashboard-action-section,
+body.busops-phase1 .dashboard-next-panel,
+body.busops-phase1 .dashboard-quick-panel,
+body.busops-phase1 .dashboard-today-panel,
+body.busops-phase1 .dashboard-money-panel {
+  border: 1px solid var(--busops-border);
+  border-radius: var(--busops-radius);
+  background: var(--busops-card);
+  box-shadow: var(--busops-shadow-sm);
+}
+
+body.busops-phase1 .dashboard-action-section { margin: 0 0 15px; padding: 15px; }
+body.busops-phase1 .dashboard-action-section > header { padding: 0 1px 11px; }
+body.busops-phase1 .dashboard-action-card { border: 1px solid var(--busops-border); border-radius: 12px; box-shadow: none; }
+body.busops-phase1 .dashboard-action-card:hover { transform: translateY(-1px); border-color: #d9e0ee; }
+body.busops-phase1 .dashboard-workspace,
+body.busops-phase1 .dashboard-lower { gap: 15px; margin-bottom: 15px; }
+body.busops-phase1 .dashboard-next-panel,
+body.busops-phase1 .dashboard-quick-panel,
+body.busops-phase1 .dashboard-today-panel,
+body.busops-phase1 .dashboard-money-panel { overflow: hidden; }
+body.busops-phase1 .dashboard-next-time { background: var(--busops-primary-soft); }
+body.busops-phase1 .dashboard-next-actions .primary { background: var(--busops-primary); box-shadow: none; }
+body.busops-phase1 .dashboard-quick-panel button > span { background: var(--busops-primary-soft); }
+
+/* Shared surface refinement within Phase 1 shell */
+body.busops-phase1 .panel,
+body.busops-phase1 .stat {
+  border-color: var(--busops-border);
+  border-radius: var(--busops-radius);
+  box-shadow: var(--busops-shadow-sm);
+}
+body.busops-phase1 .primary { background: var(--busops-primary); box-shadow: none; }
+body.busops-phase1 .primary:hover { background: var(--busops-primary-hover); box-shadow: none; }
+
+/* Tablet */
+@media (max-width: 1180px) {
+  :root { --busops-sidebar-width: 84px; }
+  body.busops-phase1 .sidebar { padding: 20px 11px 16px; }
+  body.busops-phase1 .phase1-brand { display: block; margin: 0 0 27px; }
+  body.busops-phase1 .phase1-logo-plate { width: 62px; height: 48px; padding: 8px 7px; }
+  body.busops-phase1 .phase1-brand-copy,
+  body.busops-phase1 .phase1-nav-label,
+  body.busops-phase1 .sidebar .nav span,
+  body.busops-phase1 .sidebar-bottom > div:not(.avatar) { display: none !important; }
+  body.busops-phase1 .sidebar .nav { grid-template-columns: 1fr; justify-items: center; padding: 10px; }
+  body.busops-phase1 .phase1-nav-icon,
+  body.busops-phase1 .sidebar .nav-bi { font-size: 18px; }
+  body.busops-phase1 .sidebar-bottom { grid-template-columns: 1fr; justify-items: center; padding-left: 0; padding-right: 0; }
+  body.busops-phase1 .sidebar-bottom .avatar { display: none; }
+  body.busops-phase1 #logout { display: grid; }
+  body.busops-phase1 .content { padding-left: 27px; padding-right: 27px; }
+  body.busops-phase1 .phase1-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body.busops-phase1 .phase1-departure-row { grid-template-columns: 54px minmax(220px, 1.5fr) minmax(130px, .8fr) 72px minmax(90px, .55fr) auto 14px; gap: 11px; }
+}
+
+@media (max-width: 920px) {
+  body.busops-phase1 .phase1-departure-row { grid-template-columns: 54px minmax(210px, 1fr) 72px minmax(90px, .55fr) auto 14px; }
+  body.busops-phase1 .phase1-departure-driver { display: none; }
+}
+
+/* Mobile bottom navigation */
+@media (max-width: 700px) {
+  :root { --busops-sidebar-width: 0px; }
+  body.busops-phase1 #app { display: block; padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+  body.busops-phase1 .sidebar {
+    inset: auto 0 0;
+    width: 100%;
+    height: calc(68px + env(safe-area-inset-bottom));
+    padding: 7px 8px env(safe-area-inset-bottom);
+    border-top: 1px solid rgba(255,255,255,.1);
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+  }
+  body.busops-phase1 .phase1-brand,
+  body.busops-phase1 .phase1-nav-label { display: none; }
+  body.busops-phase1 .sidebar nav {
+    flex: 1;
+    display: flex;
+    gap: 3px;
+    padding: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  body.busops-phase1 .sidebar nav::-webkit-scrollbar { display: none; }
+  body.busops-phase1 .sidebar .nav {
+    flex: 1 0 64px;
+    width: auto;
+    min-width: 64px;
+    min-height: 54px;
+    padding: 5px 4px;
+    border-radius: 10px;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 23px 14px;
+    gap: 2px;
+    justify-items: center;
+    text-align: center;
+  }
+  body.busops-phase1 .sidebar .nav.active { box-shadow: inset 0 2px #7790f2; }
+  body.busops-phase1 .sidebar .nav span {
+    display: block !important;
+    max-width: 66px;
+    overflow: hidden;
+    font-size: 8px;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  body.busops-phase1 .phase1-nav-icon,
+  body.busops-phase1 .sidebar .nav-bi { font-size: 17px; }
+  body.busops-phase1 .sidebar-bottom {
+    flex: 0 0 49px;
+    width: 49px;
+    margin: 0;
+    padding: 0 0 0 5px;
+    border: 0;
+    border-left: 1px solid rgba(255,255,255,.1);
+    display: grid;
+    grid-template-columns: 1fr;
+    place-items: center;
+  }
+  body.busops-phase1 .sidebar-bottom .avatar,
+  body.busops-phase1 .sidebar-bottom > div { display: none !important; }
+  body.busops-phase1 #logout { width: 44px; height: 52px; display: grid; }
+  body.busops-phase1 .content { width: 100%; padding: 20px 13px 30px; }
+  body.busops-phase1 .content > header.phase1-header { margin-bottom: 20px; align-items: flex-end; gap: 12px; }
+  body.busops-phase1 .phase1-heading h1 { font-size: 24px; }
+  body.busops-phase1 .phase1-heading p { max-width: 210px; font-size: 10px; }
+  body.busops-phase1 #newTrip { min-width: 46px; min-height: 46px; padding: 10px; }
+  body.busops-phase1 #newTrip span { display: none; }
+  body.busops-phase1 .dashboard-welcome { padding: 15px 16px; }
+  body.busops-phase1 .dashboard-live { justify-self: start; }
+  body.busops-phase1 .phase1-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-bottom: 13px; }
+  body.busops-phase1 .phase1-kpi-card { min-height: 135px; padding: 14px; }
+  body.busops-phase1 .phase1-kpi-icon { width: 34px; height: 34px; font-size: 15px; }
+  body.busops-phase1 .phase1-kpi-card > strong { font-size: 24px; }
+  body.busops-phase1 .phase1-kpi-card h3 { font-size: 11px; }
+  body.busops-phase1 .phase1-kpi-card p { font-size: 8px; }
+  body.busops-phase1 .phase1-departures-panel { border-radius: 16px; }
+  body.busops-phase1 .phase1-departures-panel > header { min-height: 65px; padding: 14px; }
+  body.busops-phase1 .phase1-departures-panel > header h2 { font-size: 15px; }
+  body.busops-phase1 .phase1-departures-panel > header > span { max-width: 135px; overflow: hidden; text-overflow: ellipsis; }
+  body.busops-phase1 .phase1-departure-row {
+    min-height: 126px;
+    padding: 13px;
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    gap: 10px;
+    align-items: center;
+  }
+  body.busops-phase1 .phase1-departure-date { width: 46px; height: 53px; }
+  body.busops-phase1 .phase1-departure-main > strong { font-size: 12px; }
+  body.busops-phase1 .phase1-departure-main > span { overflow: hidden; text-overflow: ellipsis; }
+  body.busops-phase1 .phase1-departure-count { grid-column: 1; grid-row: 2; padding-left: 3px; }
+  body.busops-phase1 .phase1-departure-checkin { grid-column: 2; grid-row: 2; }
+  body.busops-phase1 .phase1-status { grid-column: 3; grid-row: 2; }
+  body.busops-phase1 .phase1-departure-arrow { grid-column: 3; grid-row: 1; justify-self: end; }
+  body.busops-phase1 .phase1-departure-driver { display: none; }
+  body.busops-phase1 .dashboard-action-section { padding: 13px; }
+  body.busops-phase1 .dashboard-workspace,
+  body.busops-phase1 .dashboard-lower { gap: 12px; }
+}
+
+@media (max-width: 370px) {
+  body.busops-phase1 .phase1-kpi-grid { grid-template-columns: 1fr; }
+  body.busops-phase1 .phase1-kpi-card { min-height: 122px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.busops-phase1 *,
+  body.busops-phase1 *::before,
+  body.busops-phase1 *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}

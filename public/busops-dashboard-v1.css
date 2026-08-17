@@ -1,0 +1,476 @@
+/* BusOps Dashboard V1 — premium transport operations UI.
+   Loaded after the established Bootstrap and phase layers. */
+
+body.busops-dashboard-v1 {
+  --busops-sidebar-width: 264px;
+  --dashboard-navy: #0b1730;
+  --dashboard-navy-secondary: #10213f;
+  --dashboard-navy-surface: #17345e;
+  --dashboard-primary: #4567e8;
+  --dashboard-primary-soft: #eef2ff;
+  --dashboard-bg: #f5f7fb;
+  --dashboard-card: #fff;
+  --dashboard-text: #182235;
+  --dashboard-muted: #748096;
+  --dashboard-border: #e7ebf2;
+  --dashboard-success: #119b6b;
+  --dashboard-warning: #d88b11;
+  --dashboard-danger: #d9534f;
+  --dashboard-radius: 18px;
+  --dashboard-shadow: 0 12px 34px rgba(18, 33, 58, .065);
+  color: var(--dashboard-text);
+  background: var(--dashboard-bg);
+}
+
+body.busops-dashboard-v1 #app {
+  grid-template-columns: var(--busops-sidebar-width) minmax(0, 1fr);
+  background: var(--dashboard-bg);
+}
+
+/* Global shell */
+body.busops-dashboard-v1 .sidebar {
+  width: var(--busops-sidebar-width);
+  padding: 28px 20px 22px;
+  border-right: 1px solid rgba(255, 255, 255, .045);
+  background: linear-gradient(180deg, var(--dashboard-navy) 0%, #0c1a35 100%);
+  box-shadow: 14px 0 38px rgba(11, 23, 48, .08);
+}
+
+body.busops-dashboard-v1 .phase1-brand {
+  gap: 14px;
+  margin: 0 5px 38px;
+}
+
+body.busops-dashboard-v1 .phase1-logo-plate {
+  width: 116px;
+  height: 64px;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .18);
+}
+
+body.busops-dashboard-v1 .phase1-official-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: none;
+}
+
+body.busops-dashboard-v1 .phase1-brand-copy strong {
+  color: #fff;
+  font-size: 19px;
+  font-weight: 780;
+  letter-spacing: -.03em;
+}
+
+body.busops-dashboard-v1 .phase1-brand-copy small,
+body.busops-dashboard-v1 .phase1-nav-label {
+  color: #8593ad;
+  font-size: 10px;
+  letter-spacing: .16em;
+}
+
+body.busops-dashboard-v1 .phase1-nav-label { margin: 0 13px 12px; }
+body.busops-dashboard-v1 .sidebar nav { gap: 6px; }
+
+body.busops-dashboard-v1 .sidebar .nav {
+  min-height: 48px;
+  grid-template-columns: 23px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: #aeb9cc;
+  font-size: 14px;
+  font-weight: 650;
+  transition: color .18s ease, background .18s ease, border-color .18s ease;
+}
+
+body.busops-dashboard-v1 .sidebar .nav:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, .06);
+  background: rgba(255, 255, 255, .055);
+  transform: none;
+}
+
+body.busops-dashboard-v1 .sidebar .nav.active {
+  color: #fff;
+  border-color: rgba(120, 148, 255, .18);
+  background: rgba(69, 103, 232, .17);
+  box-shadow: inset 3px 0 #6f8cff;
+}
+
+body.busops-dashboard-v1 .sidebar .nav-bi { color: #8190ab; font-size: 18px; }
+body.busops-dashboard-v1 .sidebar .nav.active .nav-bi { color: #8fa5ff; }
+
+body.busops-dashboard-v1 .sidebar-bottom {
+  padding: 19px 10px 0;
+  border-color: rgba(255, 255, 255, .09);
+  grid-template-columns: 40px minmax(0, 1fr) 38px;
+  gap: 10px;
+}
+
+body.busops-dashboard-v1 .sidebar-bottom .avatar {
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  background: var(--dashboard-navy-surface);
+}
+
+/* Honest, timetable-based operating status (GPS is not connected yet). */
+body.busops-dashboard-v1 .dashboard-v1-view .dashboard-live {
+  display: inline-grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  min-height: 42px;
+  padding: 8px 12px;
+}
+
+body.busops-dashboard-v1 .dashboard-v1-view .dashboard-live > i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dashboard-success);
+  box-shadow: 0 0 0 4px rgba(17, 155, 107, .11);
+}
+
+body.busops-dashboard-v1 .dashboard-v1-view .dashboard-live > span {
+  display: grid;
+  gap: 1px;
+}
+
+body.busops-dashboard-v1 .dashboard-v1-view .dashboard-live strong {
+  color: var(--dashboard-text);
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.2;
+}
+
+body.busops-dashboard-v1 .dashboard-v1-view .dashboard-live small {
+  color: var(--dashboard-muted);
+  font-size: 9px;
+  font-weight: 620;
+  line-height: 1.25;
+}
+
+body.busops-dashboard-v1 .sidebar-bottom strong { font-size: 13px; }
+body.busops-dashboard-v1 .sidebar-bottom small { margin-top: 2px; color: #8492aa; font-size: 11px; }
+body.busops-dashboard-v1 #logout { width: 38px; height: 38px; border-radius: 10px; }
+
+body.busops-dashboard-v1 .content {
+  grid-column: 2;
+  width: 100%;
+  max-width: none;
+  padding: 36px clamp(28px, 3.2vw, 52px) 58px;
+  background: var(--dashboard-bg);
+}
+
+body.busops-dashboard-v1 .content > header.phase1-header {
+  width: min(100%, 1500px);
+  min-height: 76px;
+  margin: 0 auto 28px;
+  align-items: center;
+}
+
+body.busops-dashboard-v1 .phase1-heading #eyebrow {
+  color: var(--dashboard-primary);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: .14em;
+}
+
+body.busops-dashboard-v1 .phase1-heading h1 {
+  margin-top: 4px;
+  color: var(--dashboard-text);
+  font-size: clamp(30px, 2.3vw, 38px);
+  font-weight: 780;
+  letter-spacing: -.045em;
+}
+
+body.busops-dashboard-v1 .phase1-heading p {
+  margin-top: 5px;
+  color: var(--dashboard-muted);
+  font-size: 14px;
+}
+
+body.busops-dashboard-v1 #newTrip {
+  min-height: 46px;
+  padding: 11px 17px;
+  border-radius: 12px;
+  background: var(--dashboard-primary);
+  font-size: 13px;
+  box-shadow: 0 9px 20px rgba(69, 103, 232, .2);
+}
+
+body.busops-dashboard-v1 #view { width: min(100%, 1500px); }
+
+/* Dashboard hierarchy */
+body.busops-dashboard-v1 #view.dashboard-v1-view {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 22px;
+  align-items: start;
+}
+
+body.busops-dashboard-v1 .dashboard-v1-view > * { min-width: 0; }
+body.busops-dashboard-v1 .dashboard-v1-welcome,
+body.busops-dashboard-v1 .dashboard-v1-overview,
+body.busops-dashboard-v1 .dashboard-v1-control,
+body.busops-dashboard-v1 .dashboard-v1-workspace,
+body.busops-dashboard-v1 .dashboard-v1-lower { grid-column: 1 / -1; }
+
+body.busops-dashboard-v1 .dashboard-v1-live { grid-column: 1 / span 7; }
+body.busops-dashboard-v1 .dashboard-v1-attention { grid-column: 8 / -1; }
+body.busops-dashboard-v1 .dashboard-v1-view:not(:has(> .dashboard-v1-live)) > .dashboard-v1-attention { grid-column: 1 / -1; }
+
+body.busops-dashboard-v1 .dashboard-v1-welcome {
+  min-height: 126px;
+  margin: 0;
+  padding: 27px 30px;
+  border: 1px solid rgba(231, 235, 242, .88) !important;
+  border-radius: var(--dashboard-radius) !important;
+  background: linear-gradient(120deg, #fff 0%, #fff 62%, #f4f7ff 100%);
+  box-shadow: var(--dashboard-shadow) !important;
+}
+
+body.busops-dashboard-v1 .dashboard-v1-welcome > div > small {
+  color: var(--dashboard-primary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .035em;
+  text-transform: capitalize;
+}
+
+body.busops-dashboard-v1 .dashboard-v1-welcome h2 {
+  margin: 7px 0 5px;
+  color: var(--dashboard-text);
+  font-size: 25px;
+  font-weight: 760;
+  letter-spacing: -.03em;
+}
+
+body.busops-dashboard-v1 .dashboard-v1-welcome p { color: var(--dashboard-muted); font-size: 13px; }
+body.busops-dashboard-v1 .dashboard-live {
+  padding: 8px 12px;
+  border: 1px solid #cfeadd;
+  border-radius: 999px;
+  color: #0b7654;
+  background: #eff9f5;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+body.busops-dashboard-v1 .dashboard-v1-overview { margin: 0; }
+body.busops-dashboard-v1 .phase1-kpi-grid { gap: 18px; margin-bottom: 22px; }
+
+body.busops-dashboard-v1 .dashboard-v1-kpi {
+  min-height: 166px;
+  padding: 22px;
+  border: 1px solid rgba(231, 235, 242, .92);
+  border-radius: var(--dashboard-radius);
+  background: var(--dashboard-card);
+  box-shadow: var(--dashboard-shadow);
+}
+
+body.busops-dashboard-v1 .dashboard-v1-kpi::after {
+  width: 74px;
+  height: 74px;
+  right: -25px;
+  bottom: -27px;
+  opacity: .55;
+}
+
+body.busops-dashboard-v1 .phase1-kpi-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  font-size: 18px;
+}
+
+body.busops-dashboard-v1 .dashboard-v1-kpi > strong {
+  margin-top: 17px;
+  color: var(--dashboard-text);
+  font-size: 34px;
+  font-weight: 760;
+  line-height: 1;
+}
+
+body.busops-dashboard-v1 .dashboard-v1-kpi h3 { margin: 8px 0 4px; font-size: 14px; font-weight: 730; }
+body.busops-dashboard-v1 .dashboard-v1-kpi p { color: var(--dashboard-muted); font-size: 11px; }
+body.busops-dashboard-v1 .phase1-kpi-violet { color: var(--dashboard-primary); }
+body.busops-dashboard-v1 .phase1-kpi-violet .phase1-kpi-icon { color: var(--dashboard-primary); background: var(--dashboard-primary-soft); }
+
+body.busops-dashboard-v1 .phase1-departures-panel,
+body.busops-dashboard-v1 .dashboard-v1-live,
+body.busops-dashboard-v1 .dashboard-v1-attention,
+body.busops-dashboard-v1 .dashboard-v1-control,
+body.busops-dashboard-v1 .dashboard-next-panel,
+body.busops-dashboard-v1 .dashboard-quick-panel,
+body.busops-dashboard-v1 .dashboard-today-panel,
+body.busops-dashboard-v1 .dashboard-money-panel {
+  border: 1px solid rgba(231, 235, 242, .94) !important;
+  border-radius: var(--dashboard-radius) !important;
+  background: var(--dashboard-card);
+  box-shadow: var(--dashboard-shadow) !important;
+}
+
+body.busops-dashboard-v1 .phase1-departures-panel { overflow: hidden; }
+body.busops-dashboard-v1 .phase1-departures-panel > header { min-height: 76px; padding: 20px 23px; }
+body.busops-dashboard-v1 .phase1-departures-panel > header small { font-size: 10px; }
+body.busops-dashboard-v1 .phase1-departures-panel > header h2 { margin-top: 4px; font-size: 20px; }
+body.busops-dashboard-v1 .phase1-departures-panel > header > span { padding: 7px 11px; font-size: 10px; }
+
+body.busops-dashboard-v1 .dashboard-v1-departure {
+  min-height: 94px;
+  grid-template-columns: 58px minmax(230px, 1.45fr) minmax(150px, .75fr) 90px minmax(108px, .55fr) auto 18px;
+  gap: 16px;
+  padding: 17px 22px;
+}
+
+body.busops-dashboard-v1 .dashboard-v1-departure:hover { background: #f8faff; }
+body.busops-dashboard-v1 .phase1-departure-date { width: 54px; height: 60px; border-radius: 13px; }
+body.busops-dashboard-v1 .phase1-departure-date small { font-size: 9px; }
+body.busops-dashboard-v1 .phase1-departure-date strong { font-size: 21px; }
+body.busops-dashboard-v1 .phase1-departure-main > small { font-size: 10px; }
+body.busops-dashboard-v1 .phase1-departure-main > strong { font-size: 15px; }
+body.busops-dashboard-v1 .phase1-departure-main > span { gap: 7px; font-size: 11px; }
+body.busops-dashboard-v1 .phase1-departure-driver small,
+body.busops-dashboard-v1 .phase1-departure-count small,
+body.busops-dashboard-v1 .phase1-departure-checkin small { font-size: 10px; }
+body.busops-dashboard-v1 .phase1-departure-driver strong { font-size: 12px; }
+body.busops-dashboard-v1 .phase1-departure-count strong,
+body.busops-dashboard-v1 .phase1-departure-checkin strong { font-size: 15px; }
+body.busops-dashboard-v1 .phase1-status { min-height: 29px; padding: 6px 10px; font-size: 10px; }
+
+/* Existing operational areas, restyled rather than replaced */
+body.busops-dashboard-v1 .dashboard-v1-live,
+body.busops-dashboard-v1 .dashboard-v1-attention { height: 100%; margin: 0; }
+
+body.busops-dashboard-v1 .dashboard-v1-live > header,
+body.busops-dashboard-v1 .dashboard-v1-attention > header,
+body.busops-dashboard-v1 .dashboard-v1-control > header,
+body.busops-dashboard-v1 .dashboard-next-panel > header,
+body.busops-dashboard-v1 .dashboard-quick-panel > header,
+body.busops-dashboard-v1 .dashboard-today-panel > header,
+body.busops-dashboard-v1 .dashboard-money-panel > header { padding: 19px 21px; }
+
+body.busops-dashboard-v1 .dashboard-v1-live h3,
+body.busops-dashboard-v1 .dashboard-v1-attention h3,
+body.busops-dashboard-v1 .dashboard-v1-control h3,
+body.busops-dashboard-v1 .dashboard-next-panel h3,
+body.busops-dashboard-v1 .dashboard-quick-panel h3,
+body.busops-dashboard-v1 .dashboard-today-panel h3,
+body.busops-dashboard-v1 .dashboard-money-panel h3 { font-size: 17px; }
+
+body.busops-dashboard-v1 .dashboard-v1-live header p,
+body.busops-dashboard-v1 .dashboard-v1-control header p { font-size: 11px; }
+body.busops-dashboard-v1 .dashboard-v1-attention { padding: 0; }
+body.busops-dashboard-v1 .dashboard-v1-attention > header { padding-bottom: 14px; }
+body.busops-dashboard-v1 .dashboard-v1-attention .dashboard-action-grid { grid-template-columns: 1fr; gap: 8px; }
+body.busops-dashboard-v1 .dashboard-action-card { min-height: 62px; padding: 10px 12px; border-color: var(--dashboard-border); }
+body.busops-dashboard-v1 .dashboard-action-card b { font-size: 11px; }
+body.busops-dashboard-v1 .dashboard-action-card small { font-size: 9px; }
+
+body.busops-dashboard-v1 .dashboard-v1-control { margin: 0; }
+body.busops-dashboard-v1 .operations-action-list { gap: 10px; padding: 14px; }
+body.busops-dashboard-v1 .operations-action-list > button { min-height: 70px; padding: 13px; }
+body.busops-dashboard-v1 .operations-action-list strong { font-size: 12px; }
+body.busops-dashboard-v1 .operations-action-list small { font-size: 9px; }
+body.busops-dashboard-v1 .operations-action-list em { font-size: 10px; }
+
+body.busops-dashboard-v1 .dashboard-v1-workspace,
+body.busops-dashboard-v1 .dashboard-v1-lower { gap: 22px; margin: 0; }
+body.busops-dashboard-v1 .dashboard-v1-workspace { grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr); }
+body.busops-dashboard-v1 .dashboard-v1-lower { grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr); }
+body.busops-dashboard-v1 .dashboard-quick-panel button { min-height: 58px; }
+body.busops-dashboard-v1 .dashboard-quick-panel button strong { font-size: 11px; }
+body.busops-dashboard-v1 .dashboard-quick-panel button small { font-size: 9px; }
+body.busops-dashboard-v1 .dashboard-next-main h3 { font-size: 16px; }
+body.busops-dashboard-v1 .dashboard-next-main p,
+body.busops-dashboard-v1 .dashboard-next-main span,
+body.busops-dashboard-v1 .dashboard-next-progress { font-size: 10px; }
+
+@media (max-width: 1180px) {
+  body.busops-dashboard-v1 { --busops-sidebar-width: 86px; }
+  body.busops-dashboard-v1 .sidebar { padding: 20px 11px 18px; }
+  body.busops-dashboard-v1 .phase1-brand { margin-bottom: 28px; }
+  body.busops-dashboard-v1 .phase1-logo-plate { width: 64px; height: 50px; padding: 8px; }
+  body.busops-dashboard-v1 .phase1-brand-copy,
+  body.busops-dashboard-v1 .phase1-nav-label,
+  body.busops-dashboard-v1 .sidebar .nav span,
+  body.busops-dashboard-v1 .sidebar-bottom > div:not(.avatar) { display: none !important; }
+  body.busops-dashboard-v1 .sidebar .nav { grid-template-columns: 1fr; justify-items: center; padding: 11px; }
+  body.busops-dashboard-v1 .sidebar-bottom { grid-template-columns: 1fr; justify-items: center; padding-inline: 0; }
+  body.busops-dashboard-v1 .sidebar-bottom .avatar { display: none; }
+  body.busops-dashboard-v1 .content { padding-inline: 28px; }
+  body.busops-dashboard-v1 .dashboard-v1-live,
+  body.busops-dashboard-v1 .dashboard-v1-attention { grid-column: 1 / -1; }
+  body.busops-dashboard-v1 .dashboard-v1-attention .dashboard-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body.busops-dashboard-v1 .dashboard-v1-departure { grid-template-columns: 56px minmax(210px, 1fr) 80px minmax(100px, .55fr) auto 16px; }
+  body.busops-dashboard-v1 .phase1-departure-driver { display: none; }
+}
+
+@media (max-width: 860px) {
+  body.busops-dashboard-v1 .content { padding: 28px 22px 46px; }
+  body.busops-dashboard-v1 .phase1-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body.busops-dashboard-v1 .dashboard-v1-workspace,
+  body.busops-dashboard-v1 .dashboard-v1-lower { grid-template-columns: 1fr; }
+  body.busops-dashboard-v1 .dashboard-v1-departure { grid-template-columns: 56px minmax(190px, 1fr) minmax(100px, .55fr) auto 16px; }
+  body.busops-dashboard-v1 .phase1-departure-count { display: none; }
+}
+
+@media (max-width: 700px) {
+  body.busops-dashboard-v1 { --busops-sidebar-width: 0px; }
+  body.busops-dashboard-v1 #app { display: block; padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  body.busops-dashboard-v1 .sidebar { width: 100%; }
+  body.busops-dashboard-v1 .content { width: 100%; padding: 20px 14px 34px; }
+  body.busops-dashboard-v1 .content > header.phase1-header { min-height: 66px; margin-bottom: 19px; align-items: flex-end; }
+  body.busops-dashboard-v1 .phase1-heading h1 { font-size: 27px; }
+  body.busops-dashboard-v1 .phase1-heading p { max-width: 230px; font-size: 12px; }
+  body.busops-dashboard-v1 #view.dashboard-v1-view { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  body.busops-dashboard-v1 .dashboard-v1-view > * { grid-column: 1 !important; }
+  body.busops-dashboard-v1 .dashboard-v1-welcome { min-height: 0; padding: 20px; }
+  body.busops-dashboard-v1 .dashboard-v1-welcome h2 { font-size: 21px; }
+  body.busops-dashboard-v1 .dashboard-v1-welcome p { font-size: 12px; }
+  body.busops-dashboard-v1 .phase1-kpi-grid { gap: 10px; margin-bottom: 14px; }
+  body.busops-dashboard-v1 .dashboard-v1-kpi { min-height: 148px; padding: 16px; }
+  body.busops-dashboard-v1 .dashboard-v1-kpi > strong { margin-top: 14px; font-size: 28px; }
+  body.busops-dashboard-v1 .dashboard-v1-kpi h3 { font-size: 12px; }
+  body.busops-dashboard-v1 .dashboard-v1-kpi p { font-size: 9px; }
+  body.busops-dashboard-v1 .phase1-departures-panel > header { min-height: 67px; padding: 15px; }
+  body.busops-dashboard-v1 .dashboard-v1-departure {
+    min-height: 128px;
+    grid-template-columns: 50px minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    gap: 11px 12px;
+    padding: 14px;
+  }
+  body.busops-dashboard-v1 .phase1-departure-date { width: 48px; height: 55px; }
+  body.busops-dashboard-v1 .phase1-departure-main > strong { font-size: 14px; }
+  body.busops-dashboard-v1 .phase1-departure-main > span { overflow: hidden; font-size: 10px; text-overflow: ellipsis; }
+  body.busops-dashboard-v1 .phase1-departure-checkin { grid-column: 2; grid-row: 2; }
+  body.busops-dashboard-v1 .phase1-status { grid-column: 3; grid-row: 2; }
+  body.busops-dashboard-v1 .phase1-departure-arrow { grid-column: 3; grid-row: 1; }
+  body.busops-dashboard-v1 .phase1-departure-driver,
+  body.busops-dashboard-v1 .phase1-departure-count { display: none; }
+  body.busops-dashboard-v1 .dashboard-v1-attention .dashboard-action-grid,
+  body.busops-dashboard-v1 .operations-action-list { grid-template-columns: 1fr; }
+  body.busops-dashboard-v1 .dashboard-v1-live > header,
+  body.busops-dashboard-v1 .dashboard-v1-control > header { align-items: flex-start; }
+}
+
+@media (max-width: 390px) {
+  body.busops-dashboard-v1 .content { padding-inline: 11px; }
+  body.busops-dashboard-v1 .dashboard-v1-kpi { min-height: 142px; padding: 14px; }
+  body.busops-dashboard-v1 .phase1-kpi-icon { width: 38px; height: 38px; }
+  body.busops-dashboard-v1 .dashboard-v1-kpi h3 { font-size: 11px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.busops-dashboard-v1 *,
+  body.busops-dashboard-v1 *::before,
+  body.busops-dashboard-v1 *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}

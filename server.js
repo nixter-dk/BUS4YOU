@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const zlib = require('zlib');
 const { Readable } = require('stream');
 const { createTicketPdf } = require('./ticket-pdf');
+const { qrSvg } = require('./qr-code');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -56,8 +57,8 @@ function seed() {
     { id: 3, name: 'Sara Chauffør', email: 'sara@albaturist.dk', role: 'driver', salt: driver2.salt, passwordHash: driver2.hash }
   );
   return {
-    meta: { version: 27, nextId: 20, nextAccountingSequence: 0, nextBookingSequence: 0 },
-    settings: { logoFile: null, logoType: null, logoName: null },
+    meta: { version: 28, nextId: 20, nextAccountingSequence: 0, nextBookingSequence: 0 },
+    settings: { logoFile: null, logoType: null, logoName: null, ticketSigningSecret: crypto.randomBytes(32).toString('hex') },
     users,
     stops: [], buses: [],
     trips: [],
@@ -203,6 +204,10 @@ function migrateDb(value) {
   if ((value.meta.version || 1) < 25) { value.accountingEntries = value.accountingEntries || []; backfillAccountingEntries(value); value.meta.version = 25; migrated = true; }
   if ((value.meta.version || 1) < 26) { backfillBookingNumbers(value); value.meta.version = 26; migrated = true; }
   if ((value.meta.version || 1) < 27) { value.clientActions = value.clientActions || []; value.offlineClients = value.offlineClients || []; value.meta.version = 27; migrated = true; }
+  if ((value.meta.version || 1) < 28) {
+    value.settings.ticketSigningSecret = value.settings.ticketSigningSecret || crypto.randomBytes(32).toString('hex');
+    value.meta.version = 28; migrated = true;
+  }
   for(const user of value.users){if(!['da','sq','de','en'].includes(user.language)){user.language='da';migrated=true}}
   for (const trip of value.trips) {
     if (!trip.seatCount) { trip.seatCount = 54; migrated = true; }
@@ -451,12 +456,12 @@ function ticketPayment(passengers) {
   if(['pay_dk','pay_mk'].includes(primary.paymentStatus)&&primary.externalPaymentConfirmedAt)return{paid:true,label:`Betalt i ${primary.paymentStatus==='pay_mk'?'MK':'DK'}`,amount:`${Number(primary.externalPaymentAmount||0).toLocaleString('da-DK',{minimumFractionDigits:2})} ${primary.externalPaymentCurrency||primary.paymentCurrency||'DKK'}`};
   return{paid:false,label:primary.paymentStatus==='pay_mk'?'Betaler i MK':primary.paymentStatus==='pay_dk'?'Betaler i DK':'Ikke betalt',amount:'Betaling afventer'};
 }
-function ticketDocumentData(bookingNumber,passengers,user,reprint=false) {
+function ticketDocumentData(bookingNumber,passengers,user,reprint=false,qrPayload='') {
   const primary=passengers.find(item=>item.partyRole==='primary'&&item.journeyLeg!=='return')||passengers.find(item=>item.journeyLeg!=='return')||passengers[0],journeys=[];
   const tripIds=[...new Set(passengers.map(item=>item.tripId))];
   for(const tripId of tripIds){const trip=db.trips.find(item=>item.id===tripId),records=passengers.filter(item=>item.tripId===tripId);if(!trip)continue;const sample=records[0],pickup=db.stops.find(item=>item.id===sample.pickupStopId),destination=db.stops.find(item=>item.id===sample.destinationStopId);journeys.push({legLabel:sample.journeyLeg==='return'?'RETURREJSE':'UDREJSE',from:pickup?.name||trip.origin?.name||'Ukendt',to:destination?.name||trip.destination?.name||'Ukendt',departure:copenhagenDateTime(trip.departureAt),arrival:copenhagenDateTime(trip.destinationArrivalAt),seat:records.map(item=>item.seatNumber).join(', '),extraSeat:records.map(item=>item.extraSeatNumber).filter(Boolean).join(', '),tripTitle:trip.title});}
   const outbound=passengers.filter(item=>item.journeyLeg!=='return');
-  return{bookingNumber,contactName:primary?.partyContactName||primary?.name||'Passager',contactPhone:primary?.partyContactPhone||primary?.phone||'',payment:ticketPayment(passengers),journeys,passengers:outbound.map(item=>({name:item.name,seats:`Sæde ${item.seatNumber}${item.extraSeatNumber?` + ${item.extraSeatNumber}`:''}`})),note:primary?.ticketType==='return_open'?`Åben returbillet gyldig til ${copenhagenDateTime(primary.openReturnValidUntil)}. Returrejsen skal reserveres før afgang.`:'Billetten er personlig. Vis bookingnummeret ved check-in.',generatedAt:copenhagenDateTime(new Date()),generatedBy:user.name,reprint};
+  return{bookingNumber,contactName:primary?.partyContactName||primary?.name||'Passager',contactPhone:primary?.partyContactPhone||primary?.phone||'',payment:ticketPayment(passengers),journeys,passengers:outbound.map(item=>({name:item.name,seats:`Sæde ${item.seatNumber}${item.extraSeatNumber?` + ${item.extraSeatNumber}`:''}`})),note:primary?.ticketType==='return_open'?`Åben returbillet gyldig til ${copenhagenDateTime(primary.openReturnValidUntil)}. Returrejsen skal reserveres før afgang.`:'Billetten er personlig. Vis QR-koden ved check-in.',generatedAt:copenhagenDateTime(new Date()),generatedBy:user.name,reprint,qrPayload};
 }
 const DEPARTURE_CHECKLIST_ITEMS = {
   vehicle_ready:{roles:['admin','driver']},
@@ -563,6 +568,32 @@ function expectedOrigin(req) {
   const forwarded = TRUST_PROXY ? String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() : '';
   const protocol = forwarded || (req.socket.encrypted ? 'https' : 'http');
   return `${protocol}://${req.headers.host}`;
+}
+function ticketToken(bookingNumber) {
+  const payload=Buffer.from(String(bookingNumber),'utf8').toString('base64url');
+  const signature=hmac(db.settings.ticketSigningSecret,payload).subarray(0,18).toString('base64url');
+  return `${payload}.${signature}`;
+}
+function bookingFromTicketToken(token) {
+  const [payload,signature,...rest]=String(token||'').split('.');
+  if(!payload||!signature||rest.length)return null;
+  const expected=hmac(db.settings.ticketSigningSecret,payload).subarray(0,18);
+  let supplied;try{supplied=Buffer.from(signature,'base64url')}catch(_){return null}
+  if(supplied.length!==expected.length||!crypto.timingSafeEqual(supplied,expected))return null;
+  let bookingNumber;try{bookingNumber=Buffer.from(payload,'base64url').toString('utf8')}catch(_){return null}
+  return /^ALB-\d{4}-\d{6}$/.test(bookingNumber)?bookingNumber:null;
+}
+function html(value) {return String(value??'').replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));}
+function publicTicketPage(req,token) {
+  const bookingNumber=bookingFromTicketToken(token),passengers=bookingNumber?db.passengers.filter(item=>item.bookingNumber===bookingNumber):[];
+  if(!passengers.length)return null;
+  const ticket=ticketDocumentData(bookingNumber,passengers,{name:'BusOps'},false),journey=ticket.journeys[0]||{},returnJourney=ticket.journeys[1]||null,url=`${expectedOrigin(req)}/ticket/${encodeURIComponent(token)}`,paid=ticket.payment.paid;
+  const passengerSummary=ticket.passengers.map(item=>`<li><span>${html(item.name)}</span><b>${html(item.seats)}</b></li>`).join('');
+  const returnCard=returnJourney?`<section class="return"><span>RETURREJSE</span><div><b>${html(returnJourney.from||'-')} → ${html(returnJourney.to||'-')}</b><small>${html(returnJourney.departure||'Åben returdato')}</small></div><strong>Sæde ${html(returnJourney.seat||'-')}</strong></section>`:'';
+  return `<!doctype html>
+<html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#191919"><meta name="apple-mobile-web-app-capable" content="yes"><title>${html(bookingNumber)} · Alba Turist</title><style>
+*{box-sizing:border-box}body{margin:0;padding:28px 14px 44px;background:#f1f0ed;color:#171717;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}.ticket{width:min(100%,440px);margin:auto;overflow:hidden;border:1px solid #deddd8;border-radius:30px;background:#fff;box-shadow:0 26px 80px #1d1d1b20}.brand{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px 22px;background:#fff}.brand img{display:block;width:172px;height:auto}.brand span{padding:7px 10px;border:1px solid #e0dfda;border-radius:999px;color:#555550;font-size:8px;font-weight:850;letter-spacing:.14em;white-space:nowrap}.journey{margin:0 10px;padding:24px 18px 19px;border-radius:22px;background:radial-gradient(circle at 92% 0,#3d3d39 0,transparent 37%),linear-gradient(145deg,#151515,#242422);color:#fff}.route{display:grid;grid-template-columns:minmax(0,1fr) 72px minmax(0,1fr);align-items:end;gap:8px}.place{min-width:0}.place:last-child{text-align:right}.place small,.detail small,.identity small,.passengers>small,.qr-copy small{display:block;color:#999993;font-size:8px;font-weight:850;letter-spacing:.13em}.place strong{display:block;overflow:hidden;margin-top:5px;font-size:26px;line-height:1.05;letter-spacing:-.045em;text-overflow:ellipsis;white-space:nowrap}.route-line{display:grid;grid-template-columns:7px 1fr 7px;align-items:center;margin-bottom:8px}.route-line:before,.route-line:after{content:"";width:7px;height:7px;border:2px solid #fff;border-radius:50%}.route-line i{height:1px;background:#777773;position:relative}.route-line i:after{content:"";position:absolute;right:0;top:-3px;border-left:5px solid #fff;border-top:3.5px solid transparent;border-bottom:3.5px solid transparent}.details{display:grid;grid-template-columns:1fr 1fr 74px;gap:8px;margin-top:22px;padding-top:17px;border-top:1px solid #ffffff20}.detail{min-width:0}.detail:nth-child(2){padding-left:11px;border-left:1px solid #ffffff20}.detail:last-child{padding:0 0 0 13px;border-left:1px solid #ffffff20}.detail b{display:block;overflow:hidden;margin-top:5px;color:#fff;font-size:11px;line-height:1.35;text-overflow:ellipsis}.detail:last-child b{font-size:23px;line-height:1}.content{padding:20px 22px 0}.identity{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;padding-bottom:17px;border-bottom:1px solid #ecebe7}.identity strong{display:block;overflow:hidden;margin-top:5px;font-size:17px;letter-spacing:-.02em;text-overflow:ellipsis;white-space:nowrap}.identity>div:last-child{text-align:right}.identity>div:last-child b{display:block;margin-top:5px;font-size:10px;letter-spacing:.04em}.payment{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:15px;padding:11px 13px;border-radius:12px;background:${paid?'#edf8f3':'#fff6e6'};color:${paid?'#087653':'#82590b'}}.payment div{display:flex;align-items:center;gap:8px;min-width:0}.payment i{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:${paid?'#0b8b63':'#d8961d'};color:#fff;font-size:12px;font-style:normal;font-weight:900}.payment b{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.payment span{font-size:8px;font-weight:900;letter-spacing:.1em}.return{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;margin-top:14px;padding:12px 13px;border:1px solid #e5e2f5;border-radius:12px;background:#f7f5ff}.return>span{color:#6855a5;font-size:7px;font-weight:900;letter-spacing:.1em}.return div{display:grid;gap:2px}.return b{font-size:10px}.return small{color:#796f91;font-size:8px}.return>strong{color:#6855a5;font-size:9px}.passengers{margin-top:18px}.passengers ul{margin:6px 0 0;padding:0;list-style:none}.passengers li{display:flex;justify-content:space-between;gap:15px;padding:9px 0;border-bottom:1px solid #efeee9;font-size:11px}.passengers li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.passengers li b{font-size:10px;white-space:nowrap}.tear{position:relative;margin:20px -22px 0;border-top:1px dashed #d8d6d0}.tear:before,.tear:after{content:"";position:absolute;top:-12px;width:22px;height:22px;border-radius:50%;background:#f1f0ed}.tear:before{left:-11px}.tear:after{right:-11px}.scan{display:grid;grid-template-columns:152px 1fr;gap:19px;align-items:center;padding:23px 0 22px}.qr{display:grid;place-items:center;padding:9px;border:1px solid #deddd7;border-radius:16px;background:#fff;box-shadow:0 8px 25px #1717170d}.qr svg{display:block;width:132px;height:132px}.qr-copy{display:grid;align-content:center}.qr-copy strong{margin-top:6px;font-size:18px;line-height:1.08;letter-spacing:-.025em}.qr-copy p{margin:8px 0 0;color:#65655f;font-size:9px;line-height:1.5}.qr-copy b{margin-top:12px;color:#44443f;font-size:8px;letter-spacing:.06em}.footer{display:flex;justify-content:space-between;gap:12px;padding:14px 22px 18px;border-top:1px solid #eeede9;background:#fafaf8;color:#777770;font-size:8px}.footer b{color:#30302d}.security{max-width:390px;margin:13px auto 0;color:#777770;font-size:9px;line-height:1.5;text-align:center}@media(max-width:390px){body{padding:8px 8px 30px}.ticket{border-radius:23px}.brand{padding:16px}.brand img{width:148px}.journey{margin:0 7px;padding:20px 15px 17px}.place strong{font-size:22px}.route{grid-template-columns:minmax(0,1fr) 55px minmax(0,1fr)}.content{padding:17px 17px 0}.tear{margin-left:-17px;margin-right:-17px}.scan{grid-template-columns:128px 1fr;gap:14px}.qr svg{width:110px;height:110px}.qr-copy strong{font-size:16px}.details{grid-template-columns:1fr 1fr 62px}.detail:last-child{padding-left:9px}}
+</style></head><body><main class="ticket"><header class="brand"><img src="/assets/alba-turist-logo.jpg" alt="Alba Turist"><span>DIGITAL REJSEBILLET</span></header><section class="journey"><div class="route"><div class="place"><small>FRA</small><strong>${html(journey.from||'Afgang')}</strong></div><div class="route-line" aria-hidden="true"><i></i></div><div class="place"><small>TIL</small><strong>${html(journey.to||'Destination')}</strong></div></div><div class="details"><div class="detail"><small>AFGANG</small><b>${html(journey.departure||'-')}</b></div><div class="detail"><small>ANKOMST</small><b>${html(journey.arrival||'-')}</b></div><div class="detail"><small>SÆDE</small><b>${html(journey.seat||'-')}</b></div></div></section><section class="content"><div class="identity"><div><small>PASSAGER</small><strong>${html(ticket.contactName)}</strong></div><div><small>BOOKING</small><b>${html(bookingNumber)}</b></div></div><div class="payment"><div><i>${paid?'✓':'!'}</i><b>${html(ticket.payment.label)}</b></div><span>${paid?'BETALT':'AFVENTER'}</span></div>${returnCard}<div class="passengers"><small>REJSENDE I BOOKINGEN</small><ul>${passengerSummary}</ul></div><div class="tear"></div><div class="scan"><div class="qr">${qrSvg(url,{scale:4})}</div><div class="qr-copy"><small>Scan ved check-in</small><strong>Vis koden til chaufføren</strong><p>Koden åbner kun denne booking og indeholder ingen personoplysninger.</p><b>${html(bookingNumber)}</b></div></div></section><footer class="footer"><span>Alba Turist · Sikker digital billet</span><b>busops.albaturist.dk</b></footer></main><p class="security">Opbevar billetten sikkert. Enhver med adgang til QR-koden kan vise den ved check-in.</p></body></html>`;
 }
 function validRequestOrigin(req) {
   if (!IS_PRODUCTION || ['GET','HEAD','OPTIONS'].includes(req.method)) return true;
@@ -798,8 +829,8 @@ async function api(req, res, pathname) {
   if(ticketPdfMatch&&req.method==='GET'){
     const bookingNumber=decodeURIComponent(ticketPdfMatch[1]),passengers=db.passengers.filter(item=>item.bookingNumber===bookingNumber);if(!passengers.length)return fail(res,404,'Bookingen findes ikke');
     const visible=passengers.some(item=>{const trip=db.trips.find(candidate=>candidate.id===item.tripId);return trip&&allowedTrip(user,trip)});if(!visible)return fail(res,403,'Du har ikke adgang til billetten');
-    const url=new URL(req.url,`http://${req.headers.host||'localhost'}`),reprint=url.searchParams.get('reprint')==='1',pdf=createTicketPdf(ticketDocumentData(bookingNumber,passengers,user,reprint)),filename=`Alba-Turist-${bookingNumber.replace(/[^a-z0-9-]+/gi,'-')}.pdf`;
-    res.writeHead(200,{'Content-Type':'application/pdf','Content-Length':pdf.length,'Content-Disposition':`${url.searchParams.get('download')==='1'?'attachment':'inline'}; filename="${filename}"`,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});return res.end(pdf);
+    const url=new URL(req.url,`http://${req.headers.host||'localhost'}`),reprint=url.searchParams.get('reprint')==='1',qrPayload=`${expectedOrigin(req)}/ticket/${ticketToken(bookingNumber)}`,pdf=createTicketPdf(ticketDocumentData(bookingNumber,passengers,user,reprint,qrPayload)),filename=`Alba-Turist-${bookingNumber.replace(/[^a-z0-9-]+/gi,'-')}.pdf`;
+    res.writeHead(200,{'Content-Type':'application/pdf','Content-Length':pdf.length,'Content-Disposition':`${url.searchParams.get('download')==='1'?'attachment':'inline'}; filename="${filename}"`,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Link':`<${qrPayload}>; rel="alternate"; title="Digital billet"`});return res.end(pdf);
   }
   if(pathname==='/api/offline/status'&&req.method==='POST'){
     const data=await body(req),deviceId=String(data.deviceId||'').trim().slice(0,120);if(!deviceId)return fail(res,400,'Enheds-id mangler');
@@ -1146,7 +1177,7 @@ async function api(req, res, pathname) {
     if (user.role === 'sales_manager' && item.pickupStopId !== photoTrip.originId) return fail(res,403,'Salgschefen kan kun se bagage fra turens startsted');
     return serveStoredFile(res,item.photoFile,item.photoType,item.photoName);
   }
-  const match = pathname.match(/^\/api\/trips\/(\d+)(?:\/(passengers|group-bookings|baggage|seats|expenses|settlements|transfers|notifications))?$/);
+  const match = pathname.match(/^\/api\/trips\/(\d+)(?:\/(passengers|group-bookings|baggage|seats|expenses|settlements|transfers|notifications|ticket-scan))?$/);
   if (!match) return fail(res, 404, 'Ikke fundet');
   const trip = db.trips.find(t => t.id === Number(match[1])); if (!trip) return fail(res, 404, 'Turen findes ikke');
   if (!allowedTrip(user, trip)) return fail(res, 403, 'Du er ikke tildelt denne tur');
@@ -1316,7 +1347,26 @@ async function api(req, res, pathname) {
   }
   if (trip.status === 'completed' && req.method !== 'GET') return fail(res,409,'Turen er afsluttet og økonomien er låst. Genåbn turen før ændringer');
   if (part === 'seats' && req.method === 'GET') return json(res, 200, seatMap(trip.id));
-  if (trip.status === 'cancelled' && ['passengers','group-bookings','baggage'].includes(part)) return fail(res,409,'Turen er annulleret og kan ikke længere bruges til salg eller check-in');
+  if (trip.status === 'cancelled' && ['passengers','group-bookings','baggage','ticket-scan'].includes(part)) return fail(res,409,'Turen er annulleret og kan ikke længere bruges til salg eller check-in');
+  if (part === 'ticket-scan' && req.method === 'POST') {
+    if(user.role!=='driver')return fail(res,403,'Kun en tildelt chauffør kan checke ind ved at scanne billetten');
+    const data=await body(req),scanValue=String(data.token||'').trim();
+    let token=scanValue;
+    try{const scannedUrl=new URL(scanValue);token=decodeURIComponent(scannedUrl.pathname.match(/^\/ticket\/([^/]+)$/)?.[1]||'')}catch(_){}
+    const bookingNumber=bookingFromTicketToken(token);
+    if(!bookingNumber)return fail(res,400,'QR-koden er ugyldig eller beskadiget');
+    const bookingPassengers=db.passengers.filter(passenger=>passenger.tripId===trip.id&&passenger.bookingNumber===bookingNumber);
+    if(!bookingPassengers.length)return fail(res,404,'Billetten gælder ikke til denne tur');
+    if(!data.passengerId)return json(res,200,{bookingNumber,passengers:bookingPassengers.map(passengerRecordView)});
+    const passenger=bookingPassengers.find(item=>item.id===Number(data.passengerId));
+    if(!passenger)return fail(res,404,'Passageren findes ikke på den scannede booking');
+    if(passenger.checkedIn)return json(res,200,{bookingNumber,alreadyCheckedIn:true,passenger:passengerRecordView(passenger)});
+    reopenPassengerListForChange(trip,user,'Passager checket ind med QR-kode');
+    const at=new Date().toISOString();passenger.checkedIn=true;passenger.attendanceStatus='checked_in';passenger.checkedInAt=at;passenger.checkedInBy=user.id;
+    if(passenger.paymentLocation==='bus')passenger.cashHolderUserId=user.id;
+    passenger.attendanceHistory=passenger.attendanceHistory||[];passenger.attendanceHistory.push({action:'checked_in',source:'qr_scan',at,userId:user.id,stopId:passenger.pickupStopId,receivedAmount:passenger.paymentStatus==='cash'?Number(passenger.cashAmount||0):0,receivedCurrency:passenger.paymentCurrency||'DKK',receivedBy:passenger.paymentStatus==='cash'?(passenger.cashHolderUserId||passenger.paymentRecordedBy):null});
+    audit(user,'passenger.qr_checked_in','passenger',passenger.id,trip.id,{bookingNumber});await saveDb();return json(res,200,{bookingNumber,alreadyCheckedIn:false,passenger:passengerRecordView(passenger)});
+  }
   if (part === 'group-bookings' && req.method === 'POST') {
     if (!['admin','sales_manager','driver'].includes(user.role)) return fail(res,403,'Du har ikke adgang til at oprette gruppebookinger');
     const data=await body(req),replay=clientActionReplay(data,user,'group-booking.create');if(replay)return json(res,replay.status,replay.response);const participants=Array.isArray(data.passengers)?data.passengers:[];
@@ -1674,6 +1724,12 @@ const server = http.createServer(async (req, res) => {
   const pathname = new URL(req.url, `http://${req.headers.host || 'localhost'}`).pathname;
   try {
     await storageReady;
+    const publicTicketMatch=pathname.match(/^\/ticket\/([^/]+)$/);
+    if(publicTicketMatch&&req.method==='GET'){
+      const page=publicTicketPage(req,decodeURIComponent(publicTicketMatch[1]));
+      if(!page)return fail(res,404,'Billetten findes ikke eller QR-koden er ugyldig');
+      res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'private, no-store','X-Robots-Tag':'noindex, nofollow'});return res.end(page);
+    }
     if (pathname.startsWith('/api/') && !validRequestOrigin(req)) return fail(res, 403, 'Anmodningen kommer fra en ukendt adresse');
     if (pathname.startsWith('/api/')) await api(req, res, pathname);
     else if (!staticFile(res, pathname)) fail(res, 404, 'Ikke fundet');

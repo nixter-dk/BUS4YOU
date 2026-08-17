@@ -1,0 +1,518 @@
+/* BusOps professional UI — Phase 2
+   Trip details, core tab navigation, passenger list, seat plan and baggage. */
+
+body.busops-phase2.phase2-trip-open .phase1-heading #eyebrow { color: var(--busops-primary); }
+body.busops-phase2 .phase2-trip-view { display: flow-root; }
+
+/* Trip navigation and primary summary */
+body.busops-phase2 .phase2-trip-view > .back {
+  min-height: 40px;
+  margin: 0 0 13px;
+  padding: 8px 2px;
+  border-radius: 9px;
+  color: #53627a;
+  background: transparent;
+  box-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 750;
+}
+body.busops-phase2 .phase2-trip-view > .back:hover { color: var(--busops-primary); }
+body.busops-phase2 .phase2-trip-view > .back .bi { font-size: 14px; }
+
+body.busops-phase2 .phase2-trip-hero {
+  position: relative;
+  min-height: 164px;
+  margin: 0 0 15px;
+  padding: 24px 26px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: var(--busops-radius-lg);
+  color: #fff;
+  background:
+    radial-gradient(circle at 89% 14%, rgba(92,126,238,.2), transparent 28%),
+    linear-gradient(135deg, var(--busops-navy), var(--busops-navy-2));
+  box-shadow: 0 18px 42px rgba(11, 23, 48, .15);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px 24px;
+  align-items: start;
+  overflow: hidden;
+}
+
+body.busops-phase2 .phase2-trip-hero::after {
+  content: "";
+  position: absolute;
+  right: -38px;
+  bottom: -80px;
+  width: 210px;
+  height: 210px;
+  border: 1px solid rgba(255,255,255,.055);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+body.busops-phase2 .phase2-trip-route {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  gap: 2px 14px;
+  align-items: center;
+}
+body.busops-phase2 .phase2-trip-route > small,
+body.busops-phase2 .phase2-trip-route > h2,
+body.busops-phase2 .phase2-trip-route > p { grid-column: 1; min-width: 0; }
+body.busops-phase2 .phase2-trip-route > small {
+  color: #9eacc3;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .02em;
+}
+body.busops-phase2 .phase2-trip-route > h2 {
+  margin: 1px 0 2px;
+  color: #fff;
+  font-size: clamp(20px, 2.1vw, 28px);
+  line-height: 1.16;
+  letter-spacing: -.035em;
+}
+body.busops-phase2 .phase2-trip-route > p {
+  margin: 0;
+  color: #aebbd0;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+body.busops-phase2 .phase2-trip-status {
+  position: relative;
+  z-index: 1;
+  min-height: 30px;
+  padding: 7px 11px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 999px;
+  color: #dce5f4;
+  background: rgba(255,255,255,.08);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+body.busops-phase2 .phase2-trip-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #8fa4ca;
+}
+body.busops-phase2 .phase2-status-ready::before,
+body.busops-phase2 .phase2-status-checkin::before { background: #7f9dff; }
+body.busops-phase2 .phase2-status-underway::before { background: #54d6a8; }
+body.busops-phase2 .phase2-status-completed::before,
+body.busops-phase2 .phase2-status-arrived::before { background: #a9b6ca; }
+body.busops-phase2 .phase2-status-cancelled::before { background: #f08b85; }
+
+body.busops-phase2 .phase2-trip-hero > form {
+  position: relative;
+  z-index: 1;
+  grid-column: 1 / -1;
+  margin-top: 5px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,.1);
+}
+
+/* Existing figures, unchanged calculations */
+body.busops-phase2 .phase2-trip-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 15px;
+}
+body.busops-phase2 .phase2-trip-stat {
+  min-width: 0;
+  min-height: 92px;
+  padding: 15px;
+  border: 1px solid var(--busops-border);
+  border-radius: 15px;
+  background: var(--busops-card);
+  box-shadow: var(--busops-shadow-sm);
+  display: grid;
+  grid-template-columns: 39px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 1px 11px;
+  align-items: center;
+}
+body.busops-phase2 .phase2-trip-stat::after { display: none; }
+body.busops-phase2 .phase2-trip-stat small { grid-column: 2; grid-row: 2; color: var(--busops-muted); font-size: 9px; }
+body.busops-phase2 .phase2-trip-stat strong { grid-column: 2; grid-row: 1; margin: 0; color: var(--busops-text); font-size: 23px; line-height: 1; }
+
+/* Unified trip tabs */
+body.busops-phase2 .phase2-tabs {
+  position: relative;
+  min-height: 58px;
+  margin: 0 0 15px;
+  padding: 6px;
+  border: 1px solid var(--busops-border);
+  border-radius: 15px;
+  background: var(--busops-card);
+  box-shadow: var(--busops-shadow-sm);
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+body.busops-phase2 .phase2-tabs::-webkit-scrollbar { display: none; }
+body.busops-phase2 .phase2-tab {
+  position: relative;
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 9px 13px;
+  border: 0;
+  border-radius: 10px;
+  color: #6f7c90;
+  background: transparent;
+  box-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+body.busops-phase2 .phase2-tab:hover { color: #3f5270; background: #f7f9fc; }
+body.busops-phase2 .phase2-tab.active {
+  color: #3857c9;
+  background: var(--busops-primary-soft);
+  box-shadow: none;
+}
+body.busops-phase2 .phase2-tab.active::after { display: none; }
+body.busops-phase2 .phase2-tab > .bi { color: #8d9bb0; font-size: 14px; }
+body.busops-phase2 .phase2-tab.active > .bi { color: var(--busops-primary); }
+body.busops-phase2 .phase2-tab .tab-count { min-width: 19px; padding: 3px 6px; border-radius: 999px; background: #e3e8f3; color: #66748b; font-size: 8px; }
+body.busops-phase2 .phase2-tab .tab-count.attention { color: #a46408; background: #fff0d7; }
+
+/* Core content surfaces */
+body.busops-phase2 .phase2-tab-content { min-width: 0; }
+body.busops-phase2 .phase2-panel {
+  border: 1px solid var(--busops-border);
+  border-radius: var(--busops-radius);
+  background: var(--busops-card);
+  box-shadow: var(--busops-shadow-sm);
+  overflow: hidden;
+}
+body.busops-phase2 .phase2-panel-head {
+  min-height: 63px;
+  padding: 14px 17px;
+  border-bottom: 1px solid var(--busops-border);
+  background: #fff;
+}
+body.busops-phase2 .phase2-panel-head h2 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 14px;
+  letter-spacing: -.015em;
+}
+body.busops-phase2 .phase2-heading-icon {
+  width: 31px;
+  height: 31px;
+  border-radius: 9px;
+  color: var(--busops-primary);
+  background: var(--busops-primary-soft);
+  display: inline-grid;
+  place-items: center;
+  font-size: 13px;
+}
+body.busops-phase2 .phase2-panel-head > small,
+body.busops-phase2 .phase2-panel-head > span { color: var(--busops-muted); font-size: 9px; }
+
+/* Passenger workspace */
+body.busops-phase2 .phase2-cash-custody { gap: 10px; margin-bottom: 12px; }
+body.busops-phase2 .phase2-cash-custody > div {
+  border: 1px solid #e3e8f2;
+  border-radius: 13px;
+  background: #fafbfe;
+  box-shadow: none;
+}
+body.busops-phase2 .phase2-pickup-groups {
+  gap: 7px;
+  margin: 0 0 10px;
+  padding: 3px 1px 5px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+body.busops-phase2 .phase2-pickup-groups::-webkit-scrollbar { display: none; }
+body.busops-phase2 .phase2-pickup-groups button {
+  min-height: 47px;
+  padding: 8px 12px;
+  border: 1px solid var(--busops-border);
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: none;
+}
+body.busops-phase2 .phase2-pickup-groups button.active { border-color: #cdd8ff; color: #3857c9; background: var(--busops-primary-soft); }
+
+body.busops-phase2 .phase2-toolbar {
+  margin: 0 0 11px;
+  padding: 10px;
+  border: 1px solid var(--busops-border);
+  border-radius: 13px;
+  background: #fff;
+  box-shadow: var(--busops-shadow-sm);
+}
+body.busops-phase2 .phase2-toolbar .search-box,
+body.busops-phase2 .phase2-toolbar select,
+body.busops-phase2 .phase2-toolbar button {
+  min-height: 42px;
+  border-color: #dfe4ec;
+  border-radius: 9px;
+  background: #f8f9fc;
+}
+body.busops-phase2 .phase2-toolbar button { color: #56657b; }
+
+body.busops-phase2 .phase2-passenger-layout { gap: 14px; }
+body.busops-phase2 .phase2-data-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+body.busops-phase2 .phase2-data-table thead th {
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--busops-border);
+  color: #7a879a;
+  background: #fafbfc;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: .055em;
+}
+body.busops-phase2 .phase2-data-table tbody td {
+  padding: 13px;
+  border-bottom: 1px solid #edf0f4;
+  color: #344158;
+  font-size: 10px;
+  vertical-align: middle;
+}
+body.busops-phase2 .phase2-data-table tbody tr:last-child td { border-bottom: 0; }
+body.busops-phase2 .phase2-data-table tbody tr:hover { background: #fafbff; }
+body.busops-phase2 .phase2-data-table td > strong { color: var(--busops-text); font-size: 11px; }
+body.busops-phase2 .phase2-data-table td small { color: var(--busops-muted); font-size: 8px; }
+body.busops-phase2 .phase2-passenger-table .phone-link { color: #64738a; text-decoration: none; }
+body.busops-phase2 .phase2-passenger-table .phone-link:hover { color: var(--busops-primary); }
+body.busops-phase2 .phase2-passenger-table .seat-badge {
+  min-width: 31px;
+  height: 31px;
+  padding: 0 8px;
+  border: 1px solid #d8e1ff;
+  border-radius: 9px;
+  color: #3e5dcc;
+  background: #f1f4ff;
+  display: inline-grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 850;
+}
+body.busops-phase2 .attendance,
+body.busops-phase2 .payment-status {
+  min-height: 25px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  font-weight: 800;
+}
+body.busops-phase2 .attendance.pending { border-color: #f0dfbf; color: #9b650d; background: #fff8e9; }
+body.busops-phase2 .attendance.checked_in,
+body.busops-phase2 .payment-status.paid { border-color: #cce9dd; color: #127252; background: #edf9f4; }
+body.busops-phase2 .attendance.no_show,
+body.busops-phase2 .payment-status.unpaid { border-color: #efd6d4; color: #ae4844; background: #fff3f2; }
+body.busops-phase2 .payment-status.free { border-color: #d9dff5; color: #5367ae; background: #f2f4fc; }
+body.busops-phase2 .phase2-passenger-table .row-actions { gap: 6px; }
+body.busops-phase2 .phase2-passenger-table .row-actions button { min-height: 36px; border-radius: 8px; }
+
+/* Seat map — structure and seat order remain untouched */
+body.busops-phase2 .phase2-seat-panel { background: #fff; }
+body.busops-phase2 .phase2-seat-panel > .panel-head { position: relative; z-index: 2; }
+body.busops-phase2 .phase2-seat-panel .seat,
+body.busops-phase2 .phase2-seat-panel .picture-seat {
+  transition: transform .14s ease, box-shadow .14s ease, background-color .14s ease;
+}
+body.busops-phase2 .phase2-seat-panel .seat[data-seat-state="available"] {
+  border-color: #7ec9a9;
+  color: #126b4d;
+  background: #eaf8f2;
+}
+body.busops-phase2 .phase2-seat-panel .seat[data-seat-state="premium"] {
+  border-color: #e0ae48;
+  color: #855c0b;
+  background: #fff7df;
+}
+body.busops-phase2 .phase2-seat-panel .seat[data-seat-state="occupied"] {
+  border-color: #d36a68;
+  color: #fff;
+  background: #d9534f;
+  opacity: .9;
+}
+body.busops-phase2 .phase2-seat-panel .seat[data-seat-state="selected"] {
+  border-color: var(--busops-primary);
+  color: #fff;
+  background: var(--busops-primary);
+  outline: 3px solid rgba(69,103,232,.22);
+  outline-offset: 2px;
+}
+body.busops-phase2 .phase2-seat-panel .legend {
+  margin: 0;
+  padding: 14px 18px 18px;
+  border-top: 1px solid var(--busops-border);
+  background: #fff;
+}
+
+/* Baggage */
+body.busops-phase2 .phase2-baggage-layout { grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr); gap: 14px; }
+body.busops-phase2 .phase2-baggage-table .audit-note { display: block; margin-top: 3px; color: var(--busops-muted); }
+body.busops-phase2 .phase2-status-select {
+  min-height: 36px;
+  padding: 7px 28px 7px 9px;
+  border: 1px solid #dde3eb;
+  border-radius: 9px;
+  color: #506077;
+  background-color: #f8f9fc;
+  font-size: 9px;
+  font-weight: 750;
+}
+body.busops-phase2 .phase2-bag-delivered { border-color: #c8e6d9; color: #157455; background-color: #edf9f4; }
+body.busops-phase2 .phase2-bag-onboard { border-color: #d5defa; color: #405ab8; background-color: #f0f3ff; }
+body.busops-phase2 .phase2-bag-unclaimed { border-color: #f0d6d4; color: #aa4945; background-color: #fff3f2; }
+body.busops-phase2 .baggage-photo-link,
+body.busops-phase2 .baggage-photo-missing { border-radius: 8px; }
+
+/* Existing operational cards around the trip */
+body.busops-phase2 .phase2-operational-card,
+body.busops-phase2 .trip-cancelled-banner,
+body.busops-phase2 .trip-closed-banner,
+body.busops-phase2 .driver-passenger-close,
+body.busops-phase2 .sales-start-banner {
+  border-radius: 14px;
+  box-shadow: var(--busops-shadow-sm);
+}
+body.busops-phase2 .phase2-operational-card { border-color: var(--busops-border); }
+body.busops-phase2 .trip-bus-assignment,
+body.busops-phase2 .trip-driver-assignment,
+body.busops-phase2 .trip-sales-assignment { margin-bottom: 10px; }
+
+/* Tablet */
+@media (max-width: 1100px) {
+  body.busops-phase2 .phase2-baggage-layout { grid-template-columns: 1fr; }
+  body.busops-phase2 .phase2-trip-hero { padding: 21px; }
+  body.busops-phase2 .phase2-trip-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Mobile */
+@media (max-width: 700px) {
+  body.busops-phase2 .phase2-trip-view > .back { margin-bottom: 8px; min-height: 38px; }
+  body.busops-phase2 .phase2-trip-hero {
+    min-height: 0;
+    padding: 17px;
+    border-radius: 16px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  body.busops-phase2 .phase2-trip-route { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  body.busops-phase2 .phase2-trip-route > h2 { font-size: 18px; }
+  body.busops-phase2 .phase2-trip-route > p { font-size: 9px; }
+  body.busops-phase2 .phase2-trip-status { justify-self: start; }
+  body.busops-phase2 .phase2-trip-stats { gap: 8px; margin-bottom: 11px; }
+  body.busops-phase2 .phase2-trip-stat { min-height: 78px; padding: 11px; grid-template-columns: 34px minmax(0,1fr); gap: 1px 8px; }
+  body.busops-phase2 .phase2-trip-stat strong { font-size: 20px; }
+  body.busops-phase2 .phase2-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 15;
+    min-height: 57px;
+    margin-left: -4px;
+    margin-right: -4px;
+    border-radius: 13px;
+  }
+  body.busops-phase2 .phase2-tab { min-height: 43px; padding: 8px 11px; }
+  body.busops-phase2 .phase2-panel-head { min-height: 58px; padding: 12px 13px; }
+  body.busops-phase2 .phase2-toolbar { grid-template-columns: 1fr; padding: 8px; }
+  body.busops-phase2 .phase2-toolbar .search-box { grid-column: auto; }
+  body.busops-phase2 .phase2-pickup-groups { margin-left: -4px; margin-right: -4px; }
+
+  body.busops-phase2 .phase2-passenger-table,
+  body.busops-phase2 .phase2-baggage-table,
+  body.busops-phase2 .phase2-passenger-table tbody,
+  body.busops-phase2 .phase2-baggage-table tbody,
+  body.busops-phase2 .phase2-passenger-table tr,
+  body.busops-phase2 .phase2-baggage-table tr,
+  body.busops-phase2 .phase2-passenger-table td,
+  body.busops-phase2 .phase2-baggage-table td {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+  body.busops-phase2 .phase2-passenger-table thead,
+  body.busops-phase2 .phase2-baggage-table thead { display: none; }
+  body.busops-phase2 .phase2-passenger-table tbody,
+  body.busops-phase2 .phase2-baggage-table tbody { padding: 9px; background: #f7f9fc; }
+  body.busops-phase2 .phase2-passenger-table tbody tr,
+  body.busops-phase2 .phase2-baggage-table tbody tr {
+    margin-bottom: 9px;
+    padding: 5px 11px;
+    border: 1px solid var(--busops-border);
+    border-radius: 13px;
+    background: #fff;
+    box-shadow: 0 3px 12px rgba(16,33,63,.045);
+  }
+  body.busops-phase2 .phase2-passenger-table tbody tr:last-child,
+  body.busops-phase2 .phase2-baggage-table tbody tr:last-child { margin-bottom: 0; }
+  body.busops-phase2 .phase2-passenger-table tbody td,
+  body.busops-phase2 .phase2-baggage-table tbody td {
+    position: relative;
+    min-height: 40px;
+    padding: 9px 4px 9px 105px;
+    border-bottom: 1px solid #edf0f4;
+    text-align: left;
+  }
+  body.busops-phase2 .phase2-passenger-table tbody td::before,
+  body.busops-phase2 .phase2-baggage-table tbody td::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 4px;
+    top: 11px;
+    width: 92px;
+    color: #8793a5;
+    font-size: 7px;
+    font-weight: 850;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  body.busops-phase2 .phase2-passenger-table tbody td:last-child,
+  body.busops-phase2 .phase2-baggage-table tbody td:last-child { border-bottom: 0; }
+  body.busops-phase2 .phase2-passenger-table .row-actions { justify-content: flex-start; }
+  body.busops-phase2 .phase2-status-select {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+  body.busops-phase2 .phase2-operational-card select,
+  body.busops-phase2 .phase2-operational-card input,
+  body.busops-phase2 .trip-bus-assignment select {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+  body.busops-phase2 .phase2-seat-panel { margin-left: -3px; margin-right: -3px; }
+}
+
+@media (max-width: 390px) {
+  body.busops-phase2 .phase2-trip-stat { grid-template-columns: 30px minmax(0,1fr); padding: 9px; gap: 1px 7px; }
+  body.busops-phase2 .phase2-trip-stat strong { font-size: 18px; }
+  body.busops-phase2 .phase2-passenger-table tbody td,
+  body.busops-phase2 .phase2-baggage-table tbody td { padding-left: 92px; }
+  body.busops-phase2 .phase2-passenger-table tbody td::before,
+  body.busops-phase2 .phase2-baggage-table tbody td::before { width: 80px; }
+}

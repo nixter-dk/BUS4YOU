@@ -1,0 +1,513 @@
+/* BusOps Pengekasse V1 — professional financial custody workspace.
+   Loaded after all established BusOps design layers. */
+
+body.busops-cashbox-v1 .cashbox-v1-view {
+  display: block;
+  min-width: 0;
+  max-width: 1680px;
+  margin-inline: auto;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-page-header {
+  margin-bottom: 22px;
+}
+
+/* Primary balance */
+body.busops-cashbox-v1 .cashbox-v1-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(290px, 365px);
+  gap: 26px;
+  min-height: 186px;
+  margin-bottom: 15px;
+  padding: 28px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 18px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 88% 15%, rgba(49, 201, 153, .17), transparent 34%),
+    linear-gradient(135deg, var(--dashboard-navy, #0b1730), var(--dashboard-navy-surface, #17345e));
+  box-shadow: var(--dashboard-shadow, 0 12px 34px rgba(18, 33, 58, .065));
+}
+
+body.busops-cashbox-v1 .cashbox-v1-hero::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 30px;
+  width: 150px;
+  height: 4px;
+  border-radius: 0 0 6px 6px;
+  background: linear-gradient(90deg, #38c99a, #78e0bd);
+}
+
+body.busops-cashbox-v1 .cashbox-v1-hero > div {
+  position: relative;
+  z-index: 1;
+  gap: 9px;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-hero > div small {
+  color: #80dfbd;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .15em;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-hero h2 {
+  color: #fff;
+  font-size: 27px;
+  font-weight: 760;
+  letter-spacing: -.03em;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-hero p {
+  max-width: 650px;
+  color: #c7d1e0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-hero > section {
+  position: relative;
+  z-index: 1;
+  gap: 8px 16px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, .075);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .08);
+  backdrop-filter: blur(6px);
+}
+
+body.busops-cashbox-v1 .cashbox-v1-hero > section span,
+body.busops-cashbox-v1 .cashbox-v1-hero > section small {
+  color: #b9c7d9;
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: .09em;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-hero > section b {
+  color: #fff;
+  font-size: 21px;
+  font-weight: 780;
+  letter-spacing: -.02em;
+}
+
+/* Four financial metrics */
+body.busops-cashbox-v1 .cashbox-v1-summary {
+  gap: 12px;
+  margin-bottom: 15px;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-metric {
+  position: relative;
+  min-height: 104px;
+  gap: 8px 12px;
+  padding: 18px 16px 16px 62px;
+  border: 1px solid var(--dashboard-border, #e7ebf2);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(18, 33, 58, .045);
+}
+
+body.busops-cashbox-v1 .cashbox-v1-metric-icon {
+  position: absolute;
+  top: 17px;
+  left: 16px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  color: var(--dashboard-primary, #4567e8);
+  background: var(--dashboard-primary-soft, #eef2ff);
+  font-size: 16px;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-metric > small {
+  color: var(--dashboard-muted, #748096);
+  font-size: 10px;
+  font-weight: 780;
+  letter-spacing: .07em;
+  line-height: 1.35;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-metric > b {
+  color: var(--dashboard-text, #182235);
+  font-size: 14px;
+  font-weight: 760;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-metric.expense {
+  border-color: #f0dfd9;
+  background: #fffaf8;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-metric.expense .cashbox-v1-metric-icon {
+  color: var(--dashboard-danger, #d9534f);
+  background: #fff0ed;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-metric.expense > b {
+  color: #ad4b3c;
+}
+
+/* Shared financial panels */
+body.busops-cashbox-v1 .cashbox-v1-panel {
+  margin-bottom: 15px;
+  overflow: clip;
+  border: 1px solid var(--dashboard-border, #e7ebf2);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 9px 28px rgba(18, 33, 58, .05);
+}
+
+body.busops-cashbox-v1 .cashbox-v1-panel .panel-head {
+  min-height: 78px;
+  padding: 17px 20px;
+  border-bottom: 1px solid var(--dashboard-border, #e7ebf2);
+  background: #fff;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-panel .panel-head h2 {
+  color: var(--dashboard-text, #182235);
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: -.02em;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-panel .panel-head small {
+  color: var(--dashboard-muted, #748096);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-panel-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid #dfe5ef;
+  border-radius: 999px;
+  color: #59667b;
+  background: #f8f9fc;
+  font-size: 10px;
+  font-weight: 720;
+  line-height: 1.25;
+  text-align: center;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-empty {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 12px;
+  place-content: center;
+  align-items: center;
+  min-height: 82px;
+  padding: 20px 24px;
+  color: var(--dashboard-muted, #748096);
+  background: #fbfcfe;
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: left;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  color: var(--dashboard-primary, #4567e8);
+  background: var(--dashboard-primary-soft, #eef2ff);
+  font-size: 16px;
+}
+
+/* Transfer form and pending confirmations */
+body.busops-cashbox-v1 .cashbox-v1-transfer-form {
+  gap: 16px;
+  padding: 2px 20px 20px;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-transfer-form label {
+  color: #455169;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-transfer-form :is(select, input, textarea) {
+  min-height: 44px;
+  border-color: var(--dashboard-border, #e7ebf2);
+  border-radius: 11px;
+  background: #fff;
+  font-size: 12px;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-transfer-form textarea {
+  min-height: 82px;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-transfer-form > button {
+  min-height: 44px;
+  border-radius: 11px;
+  font-weight: 720;
+}
+
+body.busops-cashbox-v1 .budget-transfer-amounts small,
+body.busops-cashbox-v1 .budget-transfer-privacy small {
+  font-size: 10px;
+}
+
+body.busops-cashbox-v1 .budget-transfer-privacy {
+  border-color: #b8ddcc;
+  background: #f2faf6;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-incoming {
+  margin: 0 20px 14px;
+  padding: 15px;
+  border-color: #efd596;
+  background: #fffbf1;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-incoming small,
+body.busops-cashbox-v1 .cashbox-v1-incoming span {
+  font-size: 10px;
+}
+
+/* Trip allocations */
+body.busops-cashbox-v1 .personal-cashbox-trip-list {
+  gap: 12px;
+  padding: 0 20px 20px;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-trip-card {
+  padding: 17px;
+  border: 1px solid var(--dashboard-border, #e7ebf2);
+  border-radius: 14px;
+  background: #fbfcfe;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-trip-card header small,
+body.busops-cashbox-v1 .cashbox-v1-trip-card header > span,
+body.busops-cashbox-v1 .cashbox-v1-trip-card footer > span {
+  font-size: 10px;
+}
+
+body.busops-cashbox-v1 .personal-cashbox-trip-values section {
+  min-height: 68px;
+  padding: 12px;
+  border-color: var(--dashboard-border, #e7ebf2);
+  background: #fff;
+}
+
+body.busops-cashbox-v1 .personal-cashbox-trip-values small {
+  font-size: 10px;
+}
+
+body.busops-cashbox-v1 .personal-cashbox-trip-values b {
+  color: var(--dashboard-text, #182235);
+  font-size: 11px;
+}
+
+body.busops-cashbox-v1 .personal-cashbox-trip-values .available {
+  border-color: #b8ddcc;
+  background: #f0faf5;
+}
+
+/* Documents and transfer history */
+body.busops-cashbox-v1 .personal-cashbox-documents > div:last-child,
+body.busops-cashbox-v1 .personal-cashbox-transfers > div:last-child {
+  padding: 0 20px 20px;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-document-row,
+body.busops-cashbox-v1 .cashbox-v1-transfer-row {
+  min-height: 62px;
+  padding: 13px 8px;
+  border-color: var(--dashboard-border, #e7ebf2);
+}
+
+body.busops-cashbox-v1 .cashbox-v1-document-row small,
+body.busops-cashbox-v1 .cashbox-v1-document-row span,
+body.busops-cashbox-v1 .cashbox-v1-transfer-row small {
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+body.busops-cashbox-v1 .cashbox-v1-document-row > b,
+body.busops-cashbox-v1 .cashbox-v1-transfer-row > span:nth-of-type(2) {
+  font-size: 11px;
+}
+
+body.busops-cashbox-v1 .cashbox-transfer-direction {
+  width: 38px;
+  height: 38px;
+  font-size: 9px;
+}
+
+body.busops-cashbox-v1 .personal-cashbox-transfers em {
+  padding: 6px 9px;
+  font-size: 9px;
+}
+
+@media (max-width: 1180px) {
+  body.busops-cashbox-v1 .cashbox-v1-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(270px, 340px);
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-summary,
+  body.busops-cashbox-v1 .personal-cashbox-trip-values {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  body.busops-cashbox-v1 .cashbox-v1-page-header {
+    margin-bottom: 14px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-hero {
+    grid-template-columns: 1fr;
+    gap: 17px;
+    min-height: 0;
+    padding: 21px;
+    border-radius: 17px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-hero::before {
+    left: 21px;
+    width: 112px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-hero h2 {
+    font-size: 24px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-hero p {
+    font-size: 11px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-hero > section {
+    padding: 17px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-metric {
+    min-height: 96px;
+    padding: 15px 13px 14px 54px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-metric-icon {
+    top: 14px;
+    left: 13px;
+    width: 33px;
+    height: 33px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-panel {
+    border-radius: 16px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-panel .panel-head {
+    min-height: 72px;
+    padding: 14px 15px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-panel .panel-head h2 {
+    font-size: 15px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-panel .panel-head small {
+    font-size: 10px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-panel-status {
+    max-width: 130px;
+    min-height: 28px;
+    padding: 5px 8px;
+    font-size: 9px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-empty {
+    min-height: 72px;
+    padding: 16px;
+  }
+
+  body.busops-cashbox-v1 .personal-cashbox-trip-list,
+  body.busops-cashbox-v1 .personal-cashbox-documents > div:last-child,
+  body.busops-cashbox-v1 .personal-cashbox-transfers > div:last-child {
+    padding: 0 12px 12px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-transfer-form {
+    padding-inline: 15px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-incoming {
+    margin-inline: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  body.busops-cashbox-v1 .cashbox-v1-summary,
+  body.busops-cashbox-v1 .personal-cashbox-trip-values {
+    grid-template-columns: 1fr;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-metric {
+    min-height: 86px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-panel .panel-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-panel-status {
+    max-width: 116px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-empty {
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 10px;
+    min-height: 68px;
+    font-size: 10px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-empty-icon {
+    width: 34px;
+    height: 34px;
+    font-size: 14px;
+  }
+
+  body.busops-cashbox-v1 .personal-cashbox-trip-list footer > div {
+    gap: 7px;
+  }
+
+  body.busops-cashbox-v1 .personal-cashbox-trip-list footer > div button {
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 390px) {
+  body.busops-cashbox-v1 .cashbox-v1-hero {
+    padding: 19px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-hero > section b {
+    font-size: 19px;
+  }
+
+  body.busops-cashbox-v1 .cashbox-v1-panel .panel-head {
+    padding-inline: 13px;
+  }
+}
