@@ -72,6 +72,8 @@ Når databasen allerede indeholder data, ændrer `INITIAL_ADMIN_PASSWORD` ikke d
 
 ## Opdatering
 
+Render-tjenesten er forbundet til GitHub-repositoryet `nixter-dk/busops.albaturist.dk` på branch `agent/publish-busops-updates`. Indstillingen **On Commit** skal være aktiv, så hver ny commit på branchen starter en automatisk deployment.
+
 Kør altid den automatiske test før deployment. Ved deployment genstarter hostingudbyderen containeren. PostgreSQL-data og den permanente filmappe må ikke slettes eller erstattes under opdateringen.
 
 Denne første produktionsversion skal køre som én web-instans. Den gemmer den samlede systemtilstand atomisk i PostgreSQL, så vandret skalering til flere samtidige instanser kræver en senere migrering til en fuldt relationel datamodel og fælles fillagring.
