@@ -47,3 +47,12 @@ test('Dashboard V1 reports timetable-based active trips instead of claiming GPS 
   assert.match(js, /ture i gang/);
   assert.doesNotMatch(js, /Live driftsstatus/);
 });
+
+test('operational status only appears when it requires attention', () => {
+  const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+  assert.match(app, /TIDSTABELSTATUS/);
+  assert.doesNotMatch(app, /> LIVE DRIFT</);
+  assert.match(app, /indicator\.hidden=!needsAttention/);
+  assert.match(app, /issueCount=openEvents\.length\+operationalAlerts\.length/);
+  assert.match(app, /område kræver.*opmærksomhed/);
+});
