@@ -9,6 +9,7 @@ Route::post('/login',[AuthController::class,'login'])->name('login');
 Route::get('/csrf-token', fn () => response()->json(['token' => csrf_token()]));
 Route::middleware('auth')->group(function(){
     Route::post('/logout',[AuthController::class,'logout']);
+    Route::put('/api/password',[AuthController::class,'changePassword']);
     Route::get('/api/dashboard',[BusOpsController::class,'dashboard']);
     Route::post('/api/tasks',[BusOpsController::class,'storeTask']);
     Route::patch('/api/tasks/{task}',[BusOpsController::class,'updateTask']);

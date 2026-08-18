@@ -3,11 +3,24 @@ namespace Tests\Feature;
 use App\Models\{Customer,User};
 use App\Models\BusTask;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 class BusOpsTest extends TestCase {
     use RefreshDatabase;
     public function test_guest_sees_application():void { $this->get('/')->assertOk()->assertSee('BusOps'); }
+    public function test_admin_and_customer_can_change_their_own_password():void {
+        foreach(['admin','customer'] as $role){
+            $user=User::factory()->create(['role'=>$role,'password'=>'gammel-kode']);
+            $this->actingAs($user)->putJson('/api/password',['current_password'=>'gammel-kode','password'=>'ny-sikker-kode','password_confirmation'=>'ny-sikker-kode'])->assertOk();
+            $this->assertTrue(Hash::check('ny-sikker-kode',$user->fresh()->password));
+        }
+    }
+    public function test_password_change_requires_the_current_password():void {
+        $admin=User::factory()->create(['role'=>'admin','password'=>'rigtig-kode']);
+        $this->actingAs($admin)->putJson('/api/password',['current_password'=>'forkert-kode','password'=>'ny-sikker-kode','password_confirmation'=>'ny-sikker-kode'])->assertUnprocessable();
+        $this->assertTrue(Hash::check('rigtig-kode',$admin->fresh()->password));
+    }
     public function test_admin_can_create_task_and_business_rule_is_applied():void {
         $admin=User::factory()->create(['role'=>'admin']); $customer=Customer::create(['name'=>'Bus4You']);
         $this->actingAs($admin)->postJson('/api/tasks',['customer_id'=>$customer->id,'bus_number'=>'B-1','pickup_location'=>'Københavns Lufthavn','scheduled_at'=>now()->addHour()->toISOString()])
