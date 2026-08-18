@@ -652,6 +652,7 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     for(const departureChecklistItem of ['vehicle_ready','route_documents','passenger_list','baggage_secured','cash_budget'])await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{departureChecklistItem,checked:true}});
     const startedTrip=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{operationalAction:'start_trip'}})).value;
     assert.equal(startedTrip.operationalPhase,'underway');
+    assert.equal(startedTrip.startSource,'manual');
     const closedPassengerList=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{passengerListClosed:true,note:'Alle passagerer behandlet'}})).value;
     assert.ok(closedPassengerList.passengerListClosedAt);
     assert.equal(closedPassengerList.passengerListClosedByName,'Mads Chauffør');
@@ -661,20 +662,34 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{passengerListClosed:true,note:'Genkontrolleret efter rettelse'}});
     const arrivedTrip=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{operationalAction:'mark_arrived'}})).value;
     assert.equal(arrivedTrip.operationalPhase,'finance_pending');
-    const completedTrip=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:admin,body:{status:'completed',closeNote:'Alle poster er kontrolleret'}})).value;
+    assert.equal(arrivedTrip.arrivalSource,'manual');
+    const completedTrip=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{status:'completed',closeNote:'Alle driftsforhold er kontrolleret'}})).value;
     assert.equal(completedTrip.status,'completed');
-    assert.ok(completedTrip.economyLockedAt);
+    assert.ok(completedTrip.operationsLockedAt);
+    assert.equal(completedTrip.economyLockedAt,null);
+    assert.equal(completedTrip.closedByName,'Mads Chauffør');
+    const automaticZeroSettlements=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{cookie:admin})).value.settlements.filter(item=>item.automaticZero);
+    assert.equal(automaticZeroSettlements.length,2);
+    assert.ok(automaticZeroSettlements.every(item=>item.status==='approved'&&item.expected.DKK===0&&item.expected.EUR===0));
     await expectStatus(baseUrl,409,`/api/trips/${closureTrip.id}/passengers`,{method:'POST',cookie:admin,body:{name:'Låst',phone:'91919191',pickupStopId:origin.id,destinationStopId:destination.id,paymentStatus:'unpaid',seatNumber:11}});
     const audit=(await expectStatus(baseUrl,200,`/api/audit?tripId=${closureTrip.id}`,{cookie:admin})).value;
     assert.ok(audit.events.some(event=>event.action==='trip.closed'));
     await expectStatus(baseUrl,403,`/api/audit?tripId=${closureTrip.id}`,{cookie:driver});
     const reopenedTrip=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:admin,body:{status:'planned',reopenReason:'Passagerlisten skal korrigeres'}})).value;
     assert.equal(reopenedTrip.status,'planned');
-    await expectStatus(baseUrl,201,`/api/trips/${closureTrip.id}/passengers`,{method:'POST',cookie:admin,body:{name:'Efter genåbning',phone:'92929292',pickupStopId:origin.id,destinationStopId:destination.id,paymentStatus:'unpaid',seatNumber:11}});
+    const afterReopenPassenger=(await expectStatus(baseUrl,201,`/api/trips/${closureTrip.id}/passengers`,{method:'POST',cookie:admin,body:{name:'Efter genåbning',phone:'92929292',pickupStopId:origin.id,destinationStopId:destination.id,paymentStatus:'unpaid',seatNumber:11}})).value;
 
     const outsideDriver=(await expectStatus(baseUrl,201,'/api/drivers',{method:'POST',cookie:admin,body:{name:'Chauffør uden for tur',email:'udenfortur@albaturist.dk',password:'udenfortur1234'}})).value;
     const outsideDriverLogin=await expectStatus(baseUrl,200,'/api/login',{method:'POST',body:{email:'udenfortur@albaturist.dk',password:'udenfortur1234'}}),outsideDriverCookie=cookieFrom(outsideDriverLogin.response);
     const globalCashPassenger=(await expectStatus(baseUrl,201,`/api/trips/${closureTrip.id}/passengers`,{method:'POST',cookie:driver,body:{name:'Global kontanttest',phone:'93939393',pickupStopId:origin.id,destinationStopId:destination.id,paymentStatus:'cash',paymentCurrency:'DKK',cashAmount:80,seatNumber:12}})).value;
+    await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}/passengers`,{method:'PATCH',cookie:driver,body:{id:afterReopenPassenger.id,attendanceStatus:'no_show'}});
+    await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}/passengers`,{method:'PATCH',cookie:driver,body:{id:globalCashPassenger.id,checkedIn:true}});
+    await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{passengerListClosed:true,note:'Alle nye passagerer behandlet'}});
+    const cashTripClosedByDriver=(await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:driver,body:{status:'completed',closeNote:'Driften afsluttet med kontanter i personlig pengekasse'}})).value;
+    assert.equal(cashTripClosedByDriver.status,'completed');
+    assert.equal(cashTripClosedByDriver.counts.unsettledCash,1);
+    const driverCashboxAfterClosure=(await expectStatus(baseUrl,200,'/api/my-cashbox',{cookie:driver})).value;
+    assert.ok(driverCashboxAfterClosure.transferable.some(item=>item.reference===`passenger:${globalCashPassenger.id}`));
     const driverToSales=(await expectStatus(baseUrl,201,'/api/cash-transfers',{method:'POST',cookie:driver,body:{toUserId:isolatedOtherCashbox.holder.id,paymentRefs:[`passenger:${globalCashPassenger.id}`],note:'Billetpenge afleveres til salgschef'}})).value;
     assert.equal(driverToSales.transferType,'sales_handover');
     await expectStatus(baseUrl,403,'/api/cash-transfers',{method:'PATCH',cookie:driver,body:{id:driverToSales.id,status:'accepted'}});
@@ -689,6 +704,7 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     assert.deepEqual(outsideDriverCashbox.summary.budgetTotals,{DKK:80,EUR:0});
     assert.ok(outsideDriverCashbox.transferable.some(item=>item.kind==='budget'&&item.name==='Budget fra salgschef'));
     await expectStatus(baseUrl,409,`/api/drivers/${outsideDriver.id}`,{method:'DELETE',cookie:admin});
+    await expectStatus(baseUrl,200,`/api/trips/${closureTrip.id}`,{method:'PATCH',cookie:admin,body:{status:'planned',reopenReason:'Testen fortsætter med en ny driftsudgift'}});
 
     const forwardReceipt=`data:image/png;base64,${Buffer.from('forwarded-expense-receipt').toString('base64')}`;
     const forwardedExpense=(await expectStatus(baseUrl,201,`/api/trips/${closureTrip.id}/expenses`,{method:'POST',cookie:driver,body:{category:'Parkering',description:'Bilag til salgschef',amount:25,currency:'DKK',paymentMethod:'private',receiptName:'parkering.png',receiptType:'image/png',receiptData:forwardReceipt}})).value;
@@ -699,6 +715,31 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     await expectStatus(baseUrl,200,`/api/expenses/${forwardedExpense.id}/receipt`,{cookie:otherSales});
     const salesCashboxWithReceipt=(await expectStatus(baseUrl,200,'/api/my-cashbox',{cookie:otherSales})).value;
     assert.ok(salesCashboxWithReceipt.forwardedExpenses.some(item=>item.id===forwardedExpense.id&&item.receiptFile));
+
+    const autoStartDeparture=new Date(Date.now()-60*1000),autoStartArrival=new Date(Date.now()+60*60*1000);
+    const autoStartTrip=(await expectStatus(baseUrl,201,'/api/trips',{method:'POST',cookie:admin,body:{title:'Automatisk turstart',departureAt:autoStartDeparture.toISOString(),destinationArrivalAt:autoStartArrival.toISOString(),originId:origin.id,destinationId:destination.id,busId:doubleBus.id,primaryDriverId:2}})).value;
+    const automaticallyStarted=(await expectStatus(baseUrl,200,`/api/trips/${autoStartTrip.id}`,{cookie:driver})).value.trip;
+    assert.equal(automaticallyStarted.operationalPhase,'underway');
+    assert.equal(automaticallyStarted.startSource,'schedule');
+    assert.equal(automaticallyStarted.startedAt,autoStartDeparture.toISOString());
+    assert.equal(automaticallyStarted.boardingStartedAt,autoStartDeparture.toISOString());
+    assert.equal(automaticallyStarted.startedByName,null);
+    assert.equal(automaticallyStarted.arrivedAt,null);
+    const automaticStartAudit=(await expectStatus(baseUrl,200,`/api/audit?tripId=${autoStartTrip.id}`,{cookie:admin})).value;
+    assert.ok(automaticStartAudit.events.some(event=>event.action==='trip.started_automatically'&&event.userName==='System'));
+
+    const autoArrivalDeparture=new Date(Date.now()-2*60*60*1000),autoArrivalDeadline=new Date(Date.now()-60*60*1000);
+    const autoArrivalTrip=(await expectStatus(baseUrl,201,'/api/trips',{method:'POST',cookie:admin,body:{title:'Automatisk ankomst',departureAt:autoArrivalDeparture.toISOString(),destinationArrivalAt:autoArrivalDeadline.toISOString(),originId:origin.id,destinationId:destination.id,busId:doubleBus.id,primaryDriverId:2}})).value;
+    const automaticallyArrived=(await expectStatus(baseUrl,200,`/api/trips/${autoArrivalTrip.id}`,{cookie:driver})).value.trip;
+    assert.equal(automaticallyArrived.operationalPhase,'arrived');
+    assert.equal(automaticallyArrived.status,'planned');
+    assert.equal(automaticallyArrived.startSource,'schedule');
+    assert.equal(automaticallyArrived.arrivalSource,'schedule');
+    assert.equal(automaticallyArrived.arrivedAt,autoArrivalDeadline.toISOString());
+    assert.equal(automaticallyArrived.arrivedByName,null);
+    const automaticArrivalAudit=(await expectStatus(baseUrl,200,`/api/audit?tripId=${autoArrivalTrip.id}`,{cookie:admin})).value;
+    assert.ok(automaticArrivalAudit.events.some(event=>event.action==='trip.started_automatically'&&event.userName==='System'));
+    assert.ok(automaticArrivalAudit.events.some(event=>event.action==='trip.arrived_automatically'&&event.userName==='System'));
 
     await expectStatus(baseUrl,403,`/api/trips/${trip.id}`,{method:'DELETE',cookie:driver,body:{confirmation:'SLET',deletionReason:'Test af rollebeskyttelse'}});
     await expectStatus(baseUrl,409,`/api/trips/${trip.id}`,{method:'DELETE',cookie:admin,body:{confirmation:'forkert',deletionReason:'Test af bekræftelse'}});

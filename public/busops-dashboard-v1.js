@@ -54,6 +54,12 @@
     view.querySelectorAll('.phase1-kpi-card').forEach(card => card.classList.add('dashboard-v1-kpi'));
     view.querySelectorAll('.phase1-departure-row').forEach(row => row.classList.add('dashboard-v1-departure'));
 
+    if (['driver', 'sales_manager'].includes(state.user?.role)) {
+      const personalCashAction = view.querySelector('.dashboard-action-grid [data-dashboard-action="cash"]');
+      const personalCashDescription = personalCashAction?.querySelector('small');
+      if (personalCashDescription) personalCashDescription.textContent = 'Står i din personlige pengekasse';
+    }
+
     const liveTrips = (state.trips || []).filter(trip => {
       if (typeof tripLiveState === 'function') return tripLiveState(trip).state === 'underway';
       return typeof calendarStatus === 'function' && calendarStatus(trip) === 'underway';

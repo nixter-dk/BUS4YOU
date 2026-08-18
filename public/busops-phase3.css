@@ -192,7 +192,7 @@ body.busops-phase3 .phase3-booking-summary {
   align-self: stretch;
   padding: 22px 20px;
   border-left: 1px solid var(--busops-border);
-  background: #f8f9fc;
+  background: linear-gradient(180deg, #fbfcff, #f5f7fb);
 }
 body.busops-phase3 .phase3-booking-summary::before {
   content: "";
@@ -203,7 +203,22 @@ body.busops-phase3 .phase3-booking-summary::before {
   border-radius: 4px;
   background: var(--busops-primary);
 }
-body.busops-phase3 .phase3-booking-summary > small { color: #596b8d; }
+body.busops-phase3 .phase3-booking-summary > small {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #42567a;
+}
+body.busops-phase3 .phase3-booking-summary > small .bi {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border-radius: 8px;
+  color: var(--busops-primary);
+  background: #e9edff;
+  font-size: 13px;
+}
 body.busops-phase3 .phase3-booking-summary > div { padding: 13px 0; border-color: #e5e8ef; }
 body.busops-phase3 .phase3-booking-summary span { font-size: 7px; }
 body.busops-phase3 .phase3-booking-summary strong { color: #1f2c42; font-size: 10px; }
@@ -245,11 +260,24 @@ body.busops-phase3 .phase3-booking-actions .booking-submit { box-shadow: 0 8px 1
   body.busops-phase3 .phase3-booking-step .return-choice input,
   body.busops-phase3 .phase3-booking-step .return-choice select,
   body.busops-phase3 .phase3-booking-step .return-seat-choice select { font-size: 16px; }
-  body.busops-phase3 .phase3-booking-summary { order: 2; margin: 0 10px 10px; padding: 15px; border: 1px solid var(--busops-border); border-radius: 13px; }
-  body.busops-phase3 .phase3-booking-summary::before { margin-bottom: 10px; }
+  body.busops-phase3 .phase3-booking-summary { order: 2; margin: 0 10px 10px; padding: 15px; overflow: visible; border: 1px solid var(--busops-border); border-radius: 13px; box-shadow: 0 8px 24px rgba(11, 23, 48, .06); }
+  body.busops-phase3 .phase3-booking-summary::before { display: none; }
+  body.busops-phase3 .phase3-booking-summary > small { margin-bottom: 8px; font-size: 8px; }
   body.busops-phase3 .phase3-booking-summary > div { grid-template-columns: 82px minmax(0, 1fr); padding: 8px 0; }
-  body.busops-phase3 .phase3-booking-actions { bottom: calc(70px + env(safe-area-inset-bottom)); grid-template-columns: 86px 1fr 120px; padding: 9px 10px; }
-  body.busops-phase3 .phase3-booking-actions button { min-height: 48px; }
+  body.busops-phase3 .phase3-booking-actions {
+    position: static;
+    bottom: auto;
+    z-index: auto;
+    grid-template-columns: minmax(86px, auto) 1fr minmax(120px, auto);
+    min-height: 72px;
+    padding: 11px 13px;
+    border-top: 1px solid var(--busops-border);
+    box-shadow: none;
+  }
+  body.busops-phase3 .phase3-booking-actions > span { justify-self: start; padding: 6px 9px; border-radius: 20px; background: #f0f3f8; }
+  body.busops-phase3 .phase3-booking-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 48px; padding-inline: 16px; }
+  body.busops-phase3 .phase3-booking-actions .booking-next,
+  body.busops-phase3 .phase3-booking-actions .booking-submit { justify-self: stretch; }
 }
 
 @media (max-width: 390px) {

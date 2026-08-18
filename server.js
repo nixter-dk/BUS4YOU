@@ -484,6 +484,46 @@ function tripOperationalPhase(trip) {
   if(departureChecklistComplete(trip))return'ready';
   return'planned';
 }
+async function applyAutomaticTripStarts(now=new Date()) {
+  const recordedAt=now instanceof Date?now:new Date(now);
+  if(Number.isNaN(recordedAt.getTime()))return[];
+  const dueTrips=db.trips.filter(trip=>{
+    const scheduledDeparture=new Date(trip.departureAt);
+    return trip.status==='planned'&&!trip.startedAt&&!Number.isNaN(scheduledDeparture.getTime())&&scheduledDeparture.getTime()<=recordedAt.getTime();
+  });
+  if(!dueTrips.length)return[];
+  for(const trip of dueTrips){
+    const scheduledDeparture=new Date(trip.departureAt).toISOString(),boardingOpenedAutomatically=!trip.boardingStartedAt;
+    if(boardingOpenedAutomatically){trip.boardingStartedAt=scheduledDeparture;trip.boardingStartedBy=null;trip.boardingSource='schedule'}
+    trip.startedAt=scheduledDeparture;trip.startedBy=null;trip.startSource='schedule';trip.automaticStartRecordedAt=recordedAt.toISOString();
+    trip.lifecycleHistory=trip.lifecycleHistory||[];trip.lifecycleHistory.push({action:'start_trip_automatically',at:recordedAt.toISOString(),effectiveAt:scheduledDeparture,userId:null,note:'Planlagt afgangstid nået',boardingOpenedAutomatically});
+    audit(null,'trip.started_automatically','trip',trip.id,trip.id,{scheduledDepartureAt:scheduledDeparture,recordedAt:recordedAt.toISOString(),boardingOpenedAutomatically});
+  }
+  await saveDb();
+  return dueTrips.map(trip=>trip.id);
+}
+async function applyAutomaticTripArrivals(now=new Date()) {
+  const recordedAt=now instanceof Date?now:new Date(now);
+  if(Number.isNaN(recordedAt.getTime()))return[];
+  const dueTrips=db.trips.filter(trip=>{
+    const scheduledArrival=new Date(trip.destinationArrivalAt);
+    return trip.status==='planned'&&trip.startedAt&&!trip.arrivedAt&&!Number.isNaN(scheduledArrival.getTime())&&scheduledArrival.getTime()<=recordedAt.getTime();
+  });
+  if(!dueTrips.length)return[];
+  for(const trip of dueTrips){
+    const scheduledArrival=new Date(trip.destinationArrivalAt).toISOString();
+    trip.arrivedAt=scheduledArrival;trip.arrivedBy=null;trip.arrivalSource='schedule';trip.automaticArrivalRecordedAt=recordedAt.toISOString();
+    trip.lifecycleHistory=trip.lifecycleHistory||[];trip.lifecycleHistory.push({action:'mark_arrived_automatically',at:recordedAt.toISOString(),effectiveAt:scheduledArrival,userId:null,note:'Planlagt ankomsttid nået'});
+    audit(null,'trip.arrived_automatically','trip',trip.id,trip.id,{scheduledArrivalAt:scheduledArrival,recordedAt:recordedAt.toISOString()});
+  }
+  await saveDb();
+  return dueTrips.map(trip=>trip.id);
+}
+async function applyAutomaticTripLifecycle(now=new Date()) {
+  const recordedAt=now instanceof Date?now:new Date(now);
+  const started=await applyAutomaticTripStarts(recordedAt),arrived=await applyAutomaticTripArrivals(recordedAt);
+  return{started,arrived};
+}
 function departureChecklistView(trip) {
   const entries=trip.departureChecklist||{};
   return Object.fromEntries(Object.keys(DEPARTURE_CHECKLIST_ITEMS).map(key=>{const entry=entries[key];return[key,entry?{...entry,checkedByName:userName(entry.checkedBy)}:null]}));
@@ -505,9 +545,9 @@ function tripActionItems(trip,user) {
   if(['arrived','finance_pending'].includes(phase)&&openBaggage.length)add('baggage','warning','Bagage er ikke afsluttet',`${openBaggage.length} forsendelser mangler udleveret eller ikke afhentet`,'baggage',openBaggage.length);
   if(missingReceipts.length)add('receipts','warning','Kvitteringer mangler',`${missingReceipts.length} udgifter mangler dokumentation`,'expenses',missingReceipts.length);
   if(user.role==='admin'&&pendingExpenses.length)add('expense-approval','warning','Udgifter afventer',`${pendingExpenses.length} udgifter kræver behandling`,'expenses',pendingExpenses.length);
-  if(['arrived','finance_pending'].includes(phase)&&pendingTransfers.length)add('transfers','warning','Pengeoverførsler afventer',`${pendingTransfers.length} overførsler mangler svar`,'settlements',pendingTransfers.length);
-  if(['arrived','finance_pending'].includes(phase)&&pendingSettlements.length)add('settlements','warning','Kontantafstemninger afventer',`${pendingSettlements.length} afstemninger mangler godkendelse`,'settlements',pendingSettlements.length);
-  if(['arrived','finance_pending'].includes(phase)&&heldCash.length)add('cash','critical','Kontanter er ikke afleveret',`Kontanter står stadig hos ${heldCash.map(box=>box.holderName).join(', ')}`,'settlements',heldCash.length);
+  if(['arrived','finance_pending','completed'].includes(phase)&&pendingTransfers.length)add('transfers','warning','Pengeoverførsler afventer',`${pendingTransfers.length} overførsler mangler svar`,'settlements',pendingTransfers.length);
+  if(['arrived','finance_pending','completed'].includes(phase)&&pendingSettlements.length)add('settlements','warning','Kontantafstemninger afventer',`${pendingSettlements.length} afstemninger mangler godkendelse`,'settlements',pendingSettlements.length);
+  if(['arrived','finance_pending','completed'].includes(phase)&&heldCash.length)add('cash','warning','Kontanter står i personlig pengekasse',`Afregning afventer hos ${heldCash.map(box=>box.holderName).join(', ')}`,'settlements',heldCash.length);
   return items;
 }
 function operationalAlerts(user) {
@@ -706,13 +746,19 @@ function tripCloseBlockers(trip) {
     tripArrival:trip.arrivedAt?[]:[{message:'En tildelt chauffør skal markere turen som ankommet'}],
     passengerListConfirmation:trip.passengerListClosedAt?[]:[{message:'En tildelt chauffør skal afslutte passagerlisten'}],
     baggage:baggage.filter(item=>!['delivered','unclaimed'].includes(item.status)).map(item=>({id:item.id,name:item.senderName,status:item.status})),
-    expenses:expenses.filter(item=>!item.receiptFile||(item.status||'pending')==='pending'||((item.paymentMethod||'cash')==='private'&&item.status==='approved'&&item.reimbursementStatus!=='paid')).map(item=>({id:item.id,category:item.category,status:item.status,missingReceipt:!item.receiptFile})),
-    transfers:db.cashTransfers.filter(item=>item.tripId===trip.id&&item.status==='pending').map(item=>item.id),
-    settlements:db.cashSettlements.filter(item=>item.tripId===trip.id&&item.status==='pending').map(item=>item.id),
-    cash:cashBoxes(trip.id)
+    expenses:expenses.filter(item=>!item.receiptFile||(item.status||'pending')==='pending'||((item.paymentMethod||'cash')==='private'&&item.status==='approved'&&item.reimbursementStatus!=='paid')).map(item=>({id:item.id,category:item.category,status:item.status,missingReceipt:!item.receiptFile}))
   };
 }
 function hasCloseBlockers(blockers) { return Object.values(blockers).some(value=>Array.isArray(value)&&value.length); }
+function createAutomaticZeroSettlements(trip,closedBy,closedAt) {
+  const driverIds=[...new Set([trip.primaryDriverId,trip.secondaryDriverId].filter(Boolean))],created=[];
+  for(const driverId of driverIds){
+    if(unsettledCashRecords(trip.id,driverId).length)continue;
+    const settlement={id:id(),tripId:trip.id,driverId,expected:{DKK:0,EUR:0},delivered:{DKK:0,EUR:0},difference:{DKK:0,EUR:0},note:'Automatisk nulafstemning ved driftsafslutning',paymentRefs:[],status:'approved',automaticZero:true,operationalCloseAt:closedAt,submittedAt:closedAt,submittedBy:closedBy.id,reviewedAt:closedAt,reviewedBy:null,reviewNote:'Ingen kontanter i chaufførens pengekasse for denne tur'};
+    db.cashSettlements.push(settlement);created.push(settlement);audit(closedBy,'cash_settlement.automatic_zero','cash_settlement',settlement.id,trip.id,{driverId});
+  }
+  return created;
+}
 function reopenPassengerListForChange(trip,user,reason) {
   if(!trip.passengerListClosedAt)return;
   const previous={closedAt:trip.passengerListClosedAt,closedBy:trip.passengerListClosedBy};
@@ -1122,7 +1168,7 @@ async function api(req, res, pathname) {
     const durationMinutes=Math.round((destinationAt-departureAt)/60000);
     const timetable = [{ stopId: Number(data.originId), arrivalAt: departureAt.toISOString(), departureAt: departureAt.toISOString() }];
     if (Number(data.destinationId) !== Number(data.originId)) timetable.push({ stopId: Number(data.destinationId), arrivalAt: destinationAt.toISOString(), departureAt: destinationAt.toISOString() });
-    const trip = { id: id(), title: data.title.trim(), departureAt: departureAt.toISOString(), destinationArrivalAt: destinationAt.toISOString(), durationMinutes, originId: Number(data.originId), destinationId: Number(data.destinationId), timetable, basePrice: Number(data.basePrice || 0), busId: bus.id, seatCount: bus.seatCount, primaryDriverId: Number(data.primaryDriverId), secondaryDriverId: data.secondaryDriverId ? Number(data.secondaryDriverId) : null, salesManagerId, status: 'planned', boardingStartedAt:null,boardingStartedBy:null,startedAt:null,startedBy:null,arrivedAt:null,arrivedBy:null };
+    const trip = { id: id(), title: data.title.trim(), departureAt: departureAt.toISOString(), destinationArrivalAt: destinationAt.toISOString(), durationMinutes, originId: Number(data.originId), destinationId: Number(data.destinationId), timetable, basePrice: Number(data.basePrice || 0), busId: bus.id, seatCount: bus.seatCount, primaryDriverId: Number(data.primaryDriverId), secondaryDriverId: data.secondaryDriverId ? Number(data.secondaryDriverId) : null, salesManagerId, status: 'planned', boardingStartedAt:null,boardingStartedBy:null,boardingSource:null,startedAt:null,startedBy:null,startSource:null,automaticStartRecordedAt:null,arrivedAt:null,arrivedBy:null,arrivalSource:null,automaticArrivalRecordedAt:null };
     db.trips.push(trip); audit(user,'trip.created','trip',trip.id,trip.id,{title:trip.title,salesManagerOnDutyId:salesManagerId}); await saveDb(); return json(res, 201, tripView(trip));
   }
   const expenseMatch = pathname.match(/^\/api\/expenses\/(\d+)$/);
@@ -1233,18 +1279,18 @@ async function api(req, res, pathname) {
       if(action==='start_boarding'){
         if(!canOperateTrip(user,trip))return fail(res,403,'Kun administratoren, en tildelt chauffør eller salgschefen på vagt kan åbne check-in');
         if(trip.boardingStartedAt)return json(res,200,tripView(trip));
-        trip.boardingStartedAt=at;trip.boardingStartedBy=user.id;
+        trip.boardingStartedAt=at;trip.boardingStartedBy=user.id;trip.boardingSource='manual';
       }else if(action==='start_trip'){
         if(!['admin','driver'].includes(user.role))return fail(res,403,'Kun en tildelt chauffør eller administrator kan starte turen');
         if(!trip.boardingStartedAt)return fail(res,409,'Åbn check-in, før turen startes');
         if(!departureChecklistComplete(trip))return failDetails(res,409,'Afgangskontrollen er ikke færdig',{blockers:{departureChecklist:Object.keys(DEPARTURE_CHECKLIST_ITEMS).filter(key=>!trip.departureChecklist?.[key]?.checked)}});
         if(trip.startedAt)return json(res,200,tripView(trip));
-        trip.startedAt=at;trip.startedBy=user.id;
+        trip.startedAt=at;trip.startedBy=user.id;trip.startSource='manual';trip.automaticStartRecordedAt=null;
       }else if(action==='mark_arrived'){
         if(!['admin','driver'].includes(user.role))return fail(res,403,'Kun en tildelt chauffør eller administrator kan registrere ankomst');
         if(!trip.startedAt)return fail(res,409,'Turen skal være startet, før den kan markeres som ankommet');
         if(trip.arrivedAt)return json(res,200,tripView(trip));
-        trip.arrivedAt=at;trip.arrivedBy=user.id;
+        trip.arrivedAt=at;trip.arrivedBy=user.id;trip.arrivalSource='manual';trip.automaticArrivalRecordedAt=null;
       }else return fail(res,400,'Vælg en gyldig driftshandling');
       trip.lifecycleHistory=trip.lifecycleHistory||[];trip.lifecycleHistory.push({action,at,userId:user.id,note});audit(user,`trip.${action}`,'trip',trip.id,trip.id,{note});await saveDb();return json(res,200,tripView(trip));
     }
@@ -1259,15 +1305,16 @@ async function api(req, res, pathname) {
       audit(user,'trip.passenger_list_closed','trip',trip.id,trip.id,{passengers:db.passengers.filter(item=>item.tripId===trip.id).length,note:trip.passengerListCloseNote});await saveDb();return json(res,200,tripView(trip));
     }
     if (Object.prototype.hasOwnProperty.call(data,'status')) {
-      if (user.role !== 'admin') return fail(res,403,'Kun administratoren kan ændre turens status');
       if(data.status==='completed'){
+        if(user.role!=='admin'&&!assignedDriver(user,trip))return fail(res,403,'Kun administratoren eller en tildelt chauffør kan afslutte turen');
         if(trip.status!=='planned')return fail(res,409,'Kun en aktiv tur kan afsluttes');
         const blockers=tripCloseBlockers(trip);if(hasCloseBlockers(blockers))return failDetails(res,409,'Turen kan ikke afsluttes endnu',{blockers});
-        const note=String(data.closeNote||'').trim(),at=new Date().toISOString();trip.status='completed';trip.closedAt=at;trip.closedBy=user.id;trip.closeNote=note;trip.economyLockedAt=at;trip.lifecycleHistory=trip.lifecycleHistory||[];trip.lifecycleHistory.push({action:'closed',at,userId:user.id,note});audit(user,'trip.closed','trip',trip.id,trip.id,{note});await saveDb();return json(res,200,tripView(trip));
+        const note=String(data.closeNote||'').trim(),at=new Date().toISOString();trip.status='completed';trip.closedAt=at;trip.closedBy=user.id;trip.closeNote=note;trip.operationsLockedAt=at;trip.economyLockedAt=null;trip.lifecycleHistory=trip.lifecycleHistory||[];trip.lifecycleHistory.push({action:'closed',at,userId:user.id,note});const automaticZeroSettlements=createAutomaticZeroSettlements(trip,user,at);audit(user,'trip.closed','trip',trip.id,trip.id,{note,automaticZeroSettlements:automaticZeroSettlements.length,cashStillHeld:cashBoxes(trip.id).length});await saveDb();return json(res,200,tripView(trip));
       }
+      if (user.role !== 'admin') return fail(res,403,'Kun administratoren kan ændre turens status');
       if(data.status==='planned'&&trip.status==='completed'){
         const reason=String(data.reopenReason||'').trim();if(reason.length<3)return fail(res,400,'Skriv en begrundelse for genåbningen');
-        const at=new Date().toISOString();trip.status='planned';trip.reopenedAt=at;trip.reopenedBy=user.id;trip.reopenReason=reason;trip.economyLockedAt=null;trip.lifecycleHistory=trip.lifecycleHistory||[];trip.lifecycleHistory.push({action:'reopened',at,userId:user.id,reason});audit(user,'trip.reopened','trip',trip.id,trip.id,{reason});await saveDb();return json(res,200,tripView(trip));
+        const at=new Date().toISOString();trip.status='planned';trip.reopenedAt=at;trip.reopenedBy=user.id;trip.reopenReason=reason;trip.operationsLockedAt=null;trip.economyLockedAt=null;trip.lifecycleHistory=trip.lifecycleHistory||[];trip.lifecycleHistory.push({action:'reopened',at,userId:user.id,reason});audit(user,'trip.reopened','trip',trip.id,trip.id,{reason});await saveDb();return json(res,200,tripView(trip));
       }
       if(data.status!=='cancelled')return fail(res,400,'Ugyldig turstatus');
       if(trip.status==='completed')return fail(res,409,'Genåbn turen før den annulleres');
@@ -1357,7 +1404,7 @@ async function api(req, res, pathname) {
     if(data.status!=='archived')return fail(res,400,'Beskedkladden kan kun arkiveres, indtil en beskedtjeneste er tilkoblet');
     draft.status='archived';draft.archivedAt=new Date().toISOString();draft.archivedBy=user.id;audit(user,'notification.draft_archived','notification',draft.id,trip.id,{type:draft.type});await saveDb();return json(res,200,{...draft,createdByName:userName(draft.createdBy),archivedByName:userName(draft.archivedBy)});
   }
-  if (trip.status === 'completed' && req.method !== 'GET') return fail(res,409,'Turen er afsluttet og økonomien er låst. Genåbn turen før ændringer');
+  if (trip.status === 'completed' && req.method !== 'GET' && !['settlements','transfers'].includes(part)) return fail(res,409,'Turen er driftsmæssigt afsluttet og låst. Pengeoverførsel og kontantafregning kan stadig behandles');
   if (part === 'seats' && req.method === 'GET') return json(res, 200, seatMap(trip.id));
   if (trip.status === 'cancelled' && ['passengers','group-bookings','baggage','ticket-scan'].includes(part)) return fail(res,409,'Turen er annulleret og kan ikke længere bruges til salg eller check-in');
   if (part === 'ticket-scan' && req.method === 'POST') {
@@ -1734,6 +1781,7 @@ const server = http.createServer(async (req, res) => {
   const pathname = new URL(req.url, `http://${req.headers.host || 'localhost'}`).pathname;
   try {
     await storageReady;
+    await applyAutomaticTripLifecycle();
     const publicTicketMatch=pathname.match(/^\/ticket\/([^/]+)$/);
     if(publicTicketMatch&&req.method==='GET'){
       const page=publicTicketPage(req,decodeURIComponent(publicTicketMatch[1]));
@@ -1761,8 +1809,12 @@ function scheduleAutomaticBackups() {
   const interval=Math.max(60*60*1000,BACKUP_INTERVAL_HOURS*60*60*1000),run=async()=>{try{await createDatabaseBackup({reason:'scheduled'})}catch(error){systemEvent('critical','database_backup_failed','Automatisk databasebackup fejlede',{message:error.message});await saveDb().catch(()=>{});console.error('Automatisk databasebackup fejlede:',error.message)}};
   const timer=setInterval(run,interval);timer.unref();const first=setTimeout(run,Math.min(5*60*1000,interval));first.unref();return timer;
 }
+function scheduleAutomaticTripLifecycle() {
+  const run=()=>storageReady.then(()=>applyAutomaticTripLifecycle()).catch(error=>console.error('Automatisk turstatus fejlede:',error.message));
+  const timer=setInterval(run,30*1000);timer.unref();const first=setTimeout(run,1000);first.unref();return timer;
+}
 if (require.main === module) {
-  server.listen(PORT, HOST, () => {console.log(`BusOps kører på http://${HOST}:${PORT} med ${DATABASE_URL ? 'PostgreSQL' : 'JSON-lagring'}`);scheduleAutomaticBackups()});
+  server.listen(PORT, HOST, () => {console.log(`BusOps kører på http://${HOST}:${PORT} med ${DATABASE_URL ? 'PostgreSQL' : 'JSON-lagring'}`);scheduleAutomaticBackups();scheduleAutomaticTripLifecycle()});
   for (const signal of ['SIGTERM','SIGINT']) process.once(signal, () => shutdown(signal).finally(() => process.exit(0)));
 }
-module.exports = { server, seed, hashPassword, verifyPassword, seatMap, storageReady, fileStorage:{storeFile,removeStoredFile,r2Request,inspectStoredFiles,migrateStoredFilesToR2,backend:FILE_STORAGE_BACKEND,r2Configured:R2_CONFIGURED},maintenance:{createDatabaseBackup,restoreDatabaseBackupBytes,decryptDatabaseSnapshot,backupConfigured:Boolean(backupKey())} };
+module.exports = { server, seed, hashPassword, verifyPassword, seatMap, storageReady, fileStorage:{storeFile,removeStoredFile,r2Request,inspectStoredFiles,migrateStoredFilesToR2,backend:FILE_STORAGE_BACKEND,r2Configured:R2_CONFIGURED},maintenance:{createDatabaseBackup,restoreDatabaseBackupBytes,decryptDatabaseSnapshot,applyAutomaticTripStarts,applyAutomaticTripArrivals,applyAutomaticTripLifecycle,backupConfigured:Boolean(backupKey())} };

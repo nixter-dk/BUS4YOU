@@ -82,7 +82,13 @@
     panel.querySelector('.booking-panel-head')?.classList.add('phase3-booking-head');
     panel.querySelector('.booking-workspace')?.classList.add('phase3-booking-workspace');
     panel.querySelector('.booking-step-host')?.classList.add('phase3-step-host');
-    panel.querySelector('.booking-summary')?.classList.add('phase3-booking-summary');
+    const summary = panel.querySelector('.booking-summary');
+    summary?.classList.add('phase3-booking-summary');
+    const summaryTitle = summary?.querySelector(':scope > small');
+    if (summaryTitle && !summaryTitle.querySelector('.bi')) {
+      const label = summaryTitle.textContent.trim();
+      summaryTitle.innerHTML = `<i class="bi bi-card-checklist" aria-hidden="true"></i><span>${label}</span>`;
+    }
     panel.querySelector('.booking-actions')?.classList.add('phase3-booking-actions');
     panel.querySelector('.booking-safe')?.classList.add('phase3-booking-safe');
     bookingContext(panel);

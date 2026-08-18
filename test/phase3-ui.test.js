@@ -31,4 +31,6 @@ test('phase 3 provides desktop, tablet and mobile booking layouts', () => {
   assert.match(css, /@media \(max-width: 700px\)/);
   assert.match(css, /@media \(max-width: 390px\)/);
   assert.match(css, /phase3-booking-actions/);
+  assert.match(css, /\.phase3-booking-actions\s*\{[\s\S]*?position:\s*static;[\s\S]*?bottom:\s*auto;/);
+  assert.match(script, /bi-card-checklist/);
 });

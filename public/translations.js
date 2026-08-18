@@ -318,5 +318,17 @@ globalThis.BUSOPS_TRANSLATIONS=[
 ['Nuværende logo','Logoja aktuale','Aktuelles Logo','Current logo'],
 ['Intet logo uploadet','Nuk është ngarkuar logo','Kein Logo hochgeladen','No logo uploaded'],
 ['Logoet vises på login og i menuen.','Logoja shfaqet në hyrje dhe në menu.','Das Logo wird bei der Anmeldung und im Menü angezeigt.','The logo is shown on the login page and in the menu.'],
-['Logoet bliver synligt for administrator, chauffører og salgschefer.','Logoja do të jetë e dukshme për administratorin, shoferët dhe menaxherët e shitjeve.','Das Logo ist für Administrator, Fahrer und Verkaufsleiter sichtbar.','The logo will be visible to administrators, drivers and sales managers.']
+['Logoet bliver synligt for administrator, chauffører og salgschefer.','Logoja do të jetë e dukshme për administratorin, shoferët dhe menaxherët e shitjeve.','Das Logo ist für Administrator, Fahrer und Verkaufsleiter sichtbar.','The logo will be visible to administrators, drivers and sales managers.'],
+['Pengekasser','Arkat personale','Geldkassen','Cash boxes'],
+['Klar til afslutning','Gati për përfundim','Bereit zum Abschluss','Ready to close'],
+['Står i din personlige pengekasse','Ndodhen në arkën tuaj personale','Befindet sich in Ihrer persönlichen Geldkasse','Held in your personal cash box'],
+['PERSONLIGE PENGEKASSER','ARKAT PERSONALE','PERSÖNLICHE GELDKASSEN','PERSONAL CASH BOXES'],
+['Kontanter er adskilt fra turens drift','Paratë ndahen nga operimi i udhëtimit','Bargeld ist vom Fahrtbetrieb getrennt','Cash is separate from trip operations'],
+['Automatisk afstemt til 0','Rakorduar automatikisht në 0','Automatisch auf 0 abgestimmt','Automatically reconciled to 0'],
+['Der kræves ingen handling fra chaufføren.','Nuk kërkohet asnjë veprim nga shoferi.','Vom Fahrer ist keine Aktion erforderlich.','No action is required from the driver.'],
+['TURENS DRIFT ER AFSLUTTET','OPERIMI I UDHËTIMIT ËSHTË PËRFUNDUAR','DER FAHRTBETRIEB IST ABGESCHLOSSEN','TRIP OPERATIONS ARE CLOSED'],
+['Kontanter: automatisk 0','Para: automatikisht 0','Bargeld: automatisch 0','Cash: automatically 0'],
+['Afslut turens drift','Përfundo operimin e udhëtimit','Fahrtbetrieb abschließen','Close trip operations'],
+['Ankomst registreret automatisk efter tidsplanen','Mbërritja u regjistrua automatikisht sipas orarit','Ankunft wurde automatisch gemäß Fahrplan registriert','Arrival was registered automatically according to the timetable'],
+['Turen startet automatisk efter tidsplanen','Udhëtimi filloi automatikisht sipas orarit','Die Fahrt wurde automatisch gemäß Fahrplan gestartet','The trip started automatically according to the timetable']
 ];
