@@ -716,16 +716,34 @@ test('complete booking, check-in, baggage, expense and cash workflow', async () 
     const salesCashboxWithReceipt=(await expectStatus(baseUrl,200,'/api/my-cashbox',{cookie:otherSales})).value;
     assert.ok(salesCashboxWithReceipt.forwardedExpenses.some(item=>item.id===forwardedExpense.id&&item.receiptFile));
 
+    const outsideCheckInDeparture=new Date(Date.now()+90*60*1000),outsideCheckInArrival=new Date(Date.now()+3*60*60*1000);
+    const outsideCheckInTrip=(await expectStatus(baseUrl,201,'/api/trips',{method:'POST',cookie:admin,body:{title:'Check-in endnu lukket',departureAt:outsideCheckInDeparture.toISOString(),destinationArrivalAt:outsideCheckInArrival.toISOString(),originId:origin.id,destinationId:destination.id,busId:doubleBus.id,primaryDriverId:2}})).value;
+    const beforeAutomaticCheckIn=(await expectStatus(baseUrl,200,`/api/trips/${outsideCheckInTrip.id}`,{cookie:driver})).value.trip;
+    assert.equal(beforeAutomaticCheckIn.operationalPhase,'planned');
+    assert.equal(beforeAutomaticCheckIn.boardingStartedAt,null);
+    assert.equal(beforeAutomaticCheckIn.checkInOpensAt,new Date(outsideCheckInDeparture.getTime()-60*60*1000).toISOString());
+
+    const automaticBoardingDeparture=new Date(Date.now()+30*60*1000),automaticBoardingArrival=new Date(Date.now()+2*60*60*1000);
+    const automaticBoardingTrip=(await expectStatus(baseUrl,201,'/api/trips',{method:'POST',cookie:admin,body:{title:'Automatisk check-in',departureAt:automaticBoardingDeparture.toISOString(),destinationArrivalAt:automaticBoardingArrival.toISOString(),originId:origin.id,destinationId:destination.id,busId:doubleBus.id,primaryDriverId:2}})).value;
+    const automaticallyBoarding=(await expectStatus(baseUrl,200,`/api/trips/${automaticBoardingTrip.id}`,{cookie:driver})).value.trip;
+    assert.equal(automaticallyBoarding.operationalPhase,'boarding');
+    assert.equal(automaticallyBoarding.boardingSource,'schedule');
+    assert.equal(automaticallyBoarding.boardingStartedAt,new Date(automaticBoardingDeparture.getTime()-60*60*1000).toISOString());
+    assert.equal(automaticallyBoarding.startedAt,null);
+    const automaticBoardingAudit=(await expectStatus(baseUrl,200,`/api/audit?tripId=${automaticBoardingTrip.id}`,{cookie:admin})).value;
+    assert.ok(automaticBoardingAudit.events.some(event=>event.action==='trip.boarding_opened_automatically'&&event.userName==='System'));
+
     const autoStartDeparture=new Date(Date.now()-60*1000),autoStartArrival=new Date(Date.now()+60*60*1000);
     const autoStartTrip=(await expectStatus(baseUrl,201,'/api/trips',{method:'POST',cookie:admin,body:{title:'Automatisk turstart',departureAt:autoStartDeparture.toISOString(),destinationArrivalAt:autoStartArrival.toISOString(),originId:origin.id,destinationId:destination.id,busId:doubleBus.id,primaryDriverId:2}})).value;
     const automaticallyStarted=(await expectStatus(baseUrl,200,`/api/trips/${autoStartTrip.id}`,{cookie:driver})).value.trip;
     assert.equal(automaticallyStarted.operationalPhase,'underway');
     assert.equal(automaticallyStarted.startSource,'schedule');
     assert.equal(automaticallyStarted.startedAt,autoStartDeparture.toISOString());
-    assert.equal(automaticallyStarted.boardingStartedAt,autoStartDeparture.toISOString());
+    assert.equal(automaticallyStarted.boardingStartedAt,new Date(autoStartDeparture.getTime()-60*60*1000).toISOString());
     assert.equal(automaticallyStarted.startedByName,null);
     assert.equal(automaticallyStarted.arrivedAt,null);
     const automaticStartAudit=(await expectStatus(baseUrl,200,`/api/audit?tripId=${autoStartTrip.id}`,{cookie:admin})).value;
+    assert.ok(automaticStartAudit.events.some(event=>event.action==='trip.boarding_opened_automatically'&&event.userName==='System'));
     assert.ok(automaticStartAudit.events.some(event=>event.action==='trip.started_automatically'&&event.userName==='System'));
 
     const autoArrivalDeparture=new Date(Date.now()-2*60*60*1000),autoArrivalDeadline=new Date(Date.now()-60*60*1000);

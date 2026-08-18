@@ -470,6 +470,11 @@ const DEPARTURE_CHECKLIST_ITEMS = {
   baggage_secured:{roles:['admin','driver']},
   cash_budget:{roles:['admin','driver','sales_manager']}
 };
+const CHECK_IN_OPEN_LEAD_MS = 60*60*1000;
+function scheduledCheckInOpenAt(trip) {
+  const departureAt=new Date(trip.departureAt);
+  return Number.isNaN(departureAt.getTime())?null:new Date(departureAt.getTime()-CHECK_IN_OPEN_LEAD_MS);
+}
 function departureChecklistComplete(trip) {
   const entries=trip.departureChecklist||{};
   return Object.keys(DEPARTURE_CHECKLIST_ITEMS).every(key=>entries[key]?.checked);
@@ -484,6 +489,23 @@ function tripOperationalPhase(trip) {
   if(departureChecklistComplete(trip))return'ready';
   return'planned';
 }
+async function applyAutomaticBoardingOpenings(now=new Date()) {
+  const recordedAt=now instanceof Date?now:new Date(now);
+  if(Number.isNaN(recordedAt.getTime()))return[];
+  const dueTrips=db.trips.filter(trip=>{
+    const checkInOpenAt=scheduledCheckInOpenAt(trip);
+    return trip.status==='planned'&&!trip.boardingStartedAt&&checkInOpenAt&&checkInOpenAt.getTime()<=recordedAt.getTime();
+  });
+  if(!dueTrips.length)return[];
+  for(const trip of dueTrips){
+    const checkInOpenAt=scheduledCheckInOpenAt(trip).toISOString();
+    trip.boardingStartedAt=checkInOpenAt;trip.boardingStartedBy=null;trip.boardingSource='schedule';trip.automaticBoardingRecordedAt=recordedAt.toISOString();
+    trip.lifecycleHistory=trip.lifecycleHistory||[];trip.lifecycleHistory.push({action:'open_check_in_automatically',at:recordedAt.toISOString(),effectiveAt:checkInOpenAt,userId:null,note:'Check-in åbnet automatisk én time før planlagt afgang'});
+    audit(null,'trip.boarding_opened_automatically','trip',trip.id,trip.id,{scheduledCheckInOpenAt:checkInOpenAt,scheduledDepartureAt:new Date(trip.departureAt).toISOString(),recordedAt:recordedAt.toISOString()});
+  }
+  await saveDb();
+  return dueTrips.map(trip=>trip.id);
+}
 async function applyAutomaticTripStarts(now=new Date()) {
   const recordedAt=now instanceof Date?now:new Date(now);
   if(Number.isNaN(recordedAt.getTime()))return[];
@@ -494,7 +516,7 @@ async function applyAutomaticTripStarts(now=new Date()) {
   if(!dueTrips.length)return[];
   for(const trip of dueTrips){
     const scheduledDeparture=new Date(trip.departureAt).toISOString(),boardingOpenedAutomatically=!trip.boardingStartedAt;
-    if(boardingOpenedAutomatically){trip.boardingStartedAt=scheduledDeparture;trip.boardingStartedBy=null;trip.boardingSource='schedule'}
+    if(boardingOpenedAutomatically){trip.boardingStartedAt=scheduledCheckInOpenAt(trip)?.toISOString()||scheduledDeparture;trip.boardingStartedBy=null;trip.boardingSource='schedule';trip.automaticBoardingRecordedAt=recordedAt.toISOString()}
     trip.startedAt=scheduledDeparture;trip.startedBy=null;trip.startSource='schedule';trip.automaticStartRecordedAt=recordedAt.toISOString();
     trip.lifecycleHistory=trip.lifecycleHistory||[];trip.lifecycleHistory.push({action:'start_trip_automatically',at:recordedAt.toISOString(),effectiveAt:scheduledDeparture,userId:null,note:'Planlagt afgangstid nået',boardingOpenedAutomatically});
     audit(null,'trip.started_automatically','trip',trip.id,trip.id,{scheduledDepartureAt:scheduledDeparture,recordedAt:recordedAt.toISOString(),boardingOpenedAutomatically});
@@ -521,8 +543,8 @@ async function applyAutomaticTripArrivals(now=new Date()) {
 }
 async function applyAutomaticTripLifecycle(now=new Date()) {
   const recordedAt=now instanceof Date?now:new Date(now);
-  const started=await applyAutomaticTripStarts(recordedAt),arrived=await applyAutomaticTripArrivals(recordedAt);
-  return{started,arrived};
+  const boardingOpened=await applyAutomaticBoardingOpenings(recordedAt),started=await applyAutomaticTripStarts(recordedAt),arrived=await applyAutomaticTripArrivals(recordedAt);
+  return{boardingOpened,started,arrived};
 }
 function departureChecklistView(trip) {
   const entries=trip.departureChecklist||{};
@@ -679,7 +701,7 @@ function tripView(t) {
   const baggage = db.baggage.filter(b => b.tripId === t.id);
   const expenses = db.expenses.filter(expense=>expense.tripId===t.id);
   const unsettledCash = allCashItems().filter(item=>item.record.tripId===t.id&&item.record.paymentStatus==='cash'&&['bus','departure','shop','budget'].includes(item.record.paymentLocation)&&item.record.cashHolderUserId&&!item.record.cashHandedOverAt);
-  return { ...t,
+  return { ...t,checkInOpensAt:scheduledCheckInOpenAt(t)?.toISOString()||null,
     origin: db.stops.find(s => s.id === t.originId), destination: db.stops.find(s => s.id === t.destinationId),
     bus: db.buses.find(b => b.id === t.busId) || null,
     primaryDriver: db.users.find(u => u.id === t.primaryDriverId)?.name || null,
@@ -1168,7 +1190,7 @@ async function api(req, res, pathname) {
     const durationMinutes=Math.round((destinationAt-departureAt)/60000);
     const timetable = [{ stopId: Number(data.originId), arrivalAt: departureAt.toISOString(), departureAt: departureAt.toISOString() }];
     if (Number(data.destinationId) !== Number(data.originId)) timetable.push({ stopId: Number(data.destinationId), arrivalAt: destinationAt.toISOString(), departureAt: destinationAt.toISOString() });
-    const trip = { id: id(), title: data.title.trim(), departureAt: departureAt.toISOString(), destinationArrivalAt: destinationAt.toISOString(), durationMinutes, originId: Number(data.originId), destinationId: Number(data.destinationId), timetable, basePrice: Number(data.basePrice || 0), busId: bus.id, seatCount: bus.seatCount, primaryDriverId: Number(data.primaryDriverId), secondaryDriverId: data.secondaryDriverId ? Number(data.secondaryDriverId) : null, salesManagerId, status: 'planned', boardingStartedAt:null,boardingStartedBy:null,boardingSource:null,startedAt:null,startedBy:null,startSource:null,automaticStartRecordedAt:null,arrivedAt:null,arrivedBy:null,arrivalSource:null,automaticArrivalRecordedAt:null };
+    const trip = { id: id(), title: data.title.trim(), departureAt: departureAt.toISOString(), destinationArrivalAt: destinationAt.toISOString(), durationMinutes, originId: Number(data.originId), destinationId: Number(data.destinationId), timetable, basePrice: Number(data.basePrice || 0), busId: bus.id, seatCount: bus.seatCount, primaryDriverId: Number(data.primaryDriverId), secondaryDriverId: data.secondaryDriverId ? Number(data.secondaryDriverId) : null, salesManagerId, status: 'planned', boardingStartedAt:null,boardingStartedBy:null,boardingSource:null,automaticBoardingRecordedAt:null,startedAt:null,startedBy:null,startSource:null,automaticStartRecordedAt:null,arrivedAt:null,arrivedBy:null,arrivalSource:null,automaticArrivalRecordedAt:null };
     db.trips.push(trip); audit(user,'trip.created','trip',trip.id,trip.id,{title:trip.title,salesManagerOnDutyId:salesManagerId}); await saveDb(); return json(res, 201, tripView(trip));
   }
   const expenseMatch = pathname.match(/^\/api\/expenses\/(\d+)$/);
@@ -1817,4 +1839,4 @@ if (require.main === module) {
   server.listen(PORT, HOST, () => {console.log(`BusOps kører på http://${HOST}:${PORT} med ${DATABASE_URL ? 'PostgreSQL' : 'JSON-lagring'}`);scheduleAutomaticBackups();scheduleAutomaticTripLifecycle()});
   for (const signal of ['SIGTERM','SIGINT']) process.once(signal, () => shutdown(signal).finally(() => process.exit(0)));
 }
-module.exports = { server, seed, hashPassword, verifyPassword, seatMap, storageReady, fileStorage:{storeFile,removeStoredFile,r2Request,inspectStoredFiles,migrateStoredFilesToR2,backend:FILE_STORAGE_BACKEND,r2Configured:R2_CONFIGURED},maintenance:{createDatabaseBackup,restoreDatabaseBackupBytes,decryptDatabaseSnapshot,applyAutomaticTripStarts,applyAutomaticTripArrivals,applyAutomaticTripLifecycle,backupConfigured:Boolean(backupKey())} };
+module.exports = { server, seed, hashPassword, verifyPassword, seatMap, storageReady, fileStorage:{storeFile,removeStoredFile,r2Request,inspectStoredFiles,migrateStoredFilesToR2,backend:FILE_STORAGE_BACKEND,r2Configured:R2_CONFIGURED},maintenance:{createDatabaseBackup,restoreDatabaseBackupBytes,decryptDatabaseSnapshot,applyAutomaticBoardingOpenings,applyAutomaticTripStarts,applyAutomaticTripArrivals,applyAutomaticTripLifecycle,backupConfigured:Boolean(backupKey())} };
