@@ -96,4 +96,17 @@ class BusOpsTest extends TestCase {
         $this->actingAs($admin)->postJson("/api/tasks/{$task->id}/assign",['employee_id'=>$second->id])->assertOk()->assertJsonPath('employee.id',$second->id);
         $this->assertSame($second->id,$task->fresh()->employee_id);
     }
+    public function test_employee_can_correct_bus_number_and_undo_an_accidental_pickup():void {
+        $admin=User::factory()->create(['role'=>'admin']); $employee=User::factory()->create(['role'=>'employee']); $company=Customer::create(['name'=>'Bus4You']);
+        $task=BusTask::create(['customer_id'=>$company->id,'created_by'=>$admin->id,'employee_id'=>$employee->id,'bus_number'=>'FORKERT','pickup_location'=>'Busterminal','actual_pickup_location'=>'Busterminal','dropoff_location'=>'Københavns Busterminal','scheduled_at'=>now(),'status'=>'delivered','picked_up_at'=>now(),'delivered_at'=>now()]);
+        $this->actingAs($employee)->patchJson("/api/tasks/{$task->id}/employee-bus-number",['bus_number'=>'75191'])->assertOk()->assertJson(['bus_number'=>'75191']);
+        $this->postJson("/api/tasks/{$task->id}/undo-pickup")->assertOk()->assertJson(['status'=>'assigned','actual_pickup_location'=>null]);
+        $fresh=$task->fresh(); $this->assertNull($fresh->picked_up_at); $this->assertNull($fresh->delivered_at);
+    }
+    public function test_employee_cannot_correct_another_employees_task():void {
+        $admin=User::factory()->create(['role'=>'admin']); $assigned=User::factory()->create(['role'=>'employee']); $other=User::factory()->create(['role'=>'employee']); $company=Customer::create(['name'=>'Bus4You']);
+        $task=BusTask::create(['customer_id'=>$company->id,'created_by'=>$admin->id,'employee_id'=>$assigned->id,'bus_number'=>'75191','pickup_location'=>'Busterminal','dropoff_location'=>'Københavns Busterminal','scheduled_at'=>now(),'status'=>'delivered']);
+        $this->actingAs($other)->patchJson("/api/tasks/{$task->id}/employee-bus-number",['bus_number'=>'75192'])->assertForbidden();
+        $this->postJson("/api/tasks/{$task->id}/undo-pickup")->assertForbidden();
+    }
 }

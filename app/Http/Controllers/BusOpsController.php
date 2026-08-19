@@ -66,6 +66,23 @@ class BusOpsController extends Controller {
         $this->log($r,$directCompletion?'Bus hentet og opgave udført':($d['status']==='picked_up'?'Bus hentet':'Opgave udført'),$task,['aftalt_sted'=>$task->pickup_location,'faktisk_sted'=>$changes['actual_pickup_location']??$task->actual_pickup_location]);
         return $task->fresh(['customer','employee']);
     }
+    public function undoPickup(Request $r,BusTask $task) {
+        abort_unless($r->user()->role==='employee'&&$task->employee_id===$r->user()->id,403);
+        abort_unless(in_array($task->status,['picked_up','delivered'],true),422,'Kun en registreret afhentning kan fortrydes.');
+        $previous=['status'=>$task->status,'picked_up_at'=>$task->picked_up_at?->toISOString(),'delivered_at'=>$task->delivered_at?->toISOString()];
+        $task->update(['status'=>'assigned','picked_up_at'=>null,'delivered_at'=>null,'actual_pickup_location'=>null]);
+        $this->log($r,'Bus hentet fortrudt',$task,['før'=>$previous]);
+        return $task->fresh(['customer','employee']);
+    }
+    public function employeeBusNumber(Request $r,BusTask $task) {
+        abort_unless($r->user()->role==='employee'&&$task->employee_id===$r->user()->id,403);
+        abort_if($task->status==='cancelled',422,'En aflyst opgave kan ikke rettes.');
+        $data=$r->validate(['bus_number'=>'required|string|max:50']);
+        $previous=$task->bus_number;
+        $task->update($data);
+        $this->log($r,'Busnummer rettet af medarbejder',$task,['fra'=>$previous,'til'=>$data['bus_number']]);
+        return $task->fresh(['customer','employee']);
+    }
     public function actualPickupLocation(Request $r,BusTask $task) { abort_unless($r->user()->role==='employee'&&$task->employee_id===$r->user()->id,403); abort_unless(in_array($task->status,['assigned','picked_up']),422,'Afhentningsstedet kan kun ændres på en aktiv opgave.'); $d=$r->validate(['actual_pickup_location'=>'required|string|max:255']); $task->update($d); $this->log($r,'Faktisk afhentningssted ændret',$task,['aftalt_sted'=>$task->pickup_location,'faktisk_sted'=>$d['actual_pickup_location']]); return $task->fresh(['customer','employee']); }
     public function cancel(Request $r,BusTask $task) { $this->admin($r); $task->update(['status'=>'cancelled','cancelled_at'=>now()]); $this->log($r,'Opgave aflyst',$task); return $task; }
     public function destroy(Request $r,BusTask $task) {
