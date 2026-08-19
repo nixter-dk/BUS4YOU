@@ -100,6 +100,9 @@ class BusOpsTest extends TestCase {
         $admin=User::factory()->create(['role'=>'admin']); $employee=User::factory()->create(['role'=>'employee']); $company=Customer::create(['name'=>'Bus4You']);
         $task=BusTask::create(['customer_id'=>$company->id,'created_by'=>$admin->id,'employee_id'=>$employee->id,'bus_number'=>'FORKERT','pickup_location'=>'Busterminal','actual_pickup_location'=>'Busterminal','dropoff_location'=>'Københavns Busterminal','scheduled_at'=>now(),'status'=>'delivered','picked_up_at'=>now(),'delivered_at'=>now()]);
         $this->actingAs($employee)->patchJson("/api/tasks/{$task->id}/employee-bus-number",['bus_number'=>'75191'])->assertOk()->assertJson(['bus_number'=>'75191']);
+        $correctTime=now()->subMinutes(20)->startOfMinute();
+        $this->patchJson("/api/tasks/{$task->id}/employee-pickup-time",['picked_up_at'=>$correctTime->toISOString()])->assertOk();
+        $this->assertSame($correctTime->timestamp,$task->fresh()->picked_up_at->timestamp);
         $this->postJson("/api/tasks/{$task->id}/undo-pickup")->assertOk()->assertJson(['status'=>'assigned','actual_pickup_location'=>null]);
         $fresh=$task->fresh(); $this->assertNull($fresh->picked_up_at); $this->assertNull($fresh->delivered_at);
     }
@@ -107,6 +110,12 @@ class BusOpsTest extends TestCase {
         $admin=User::factory()->create(['role'=>'admin']); $assigned=User::factory()->create(['role'=>'employee']); $other=User::factory()->create(['role'=>'employee']); $company=Customer::create(['name'=>'Bus4You']);
         $task=BusTask::create(['customer_id'=>$company->id,'created_by'=>$admin->id,'employee_id'=>$assigned->id,'bus_number'=>'75191','pickup_location'=>'Busterminal','dropoff_location'=>'Københavns Busterminal','scheduled_at'=>now(),'status'=>'delivered']);
         $this->actingAs($other)->patchJson("/api/tasks/{$task->id}/employee-bus-number",['bus_number'=>'75192'])->assertForbidden();
+        $this->patchJson("/api/tasks/{$task->id}/employee-pickup-time",['picked_up_at'=>now()->subMinute()->toISOString()])->assertForbidden();
         $this->postJson("/api/tasks/{$task->id}/undo-pickup")->assertForbidden();
+    }
+    public function test_employee_cannot_set_pickup_registration_in_the_future():void {
+        $admin=User::factory()->create(['role'=>'admin']); $employee=User::factory()->create(['role'=>'employee']); $company=Customer::create(['name'=>'Bus4You']);
+        $task=BusTask::create(['customer_id'=>$company->id,'created_by'=>$admin->id,'employee_id'=>$employee->id,'bus_number'=>'75191','pickup_location'=>'Busterminal','dropoff_location'=>'Københavns Busterminal','scheduled_at'=>now(),'status'=>'delivered','picked_up_at'=>now(),'delivered_at'=>now()]);
+        $this->actingAs($employee)->patchJson("/api/tasks/{$task->id}/employee-pickup-time",['picked_up_at'=>now()->addHour()->toISOString()])->assertUnprocessable();
     }
 }

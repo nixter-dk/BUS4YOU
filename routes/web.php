@@ -19,6 +19,7 @@ Route::middleware('auth')->group(function(){
     Route::post('/api/tasks/{task}/status',[BusOpsController::class,'status']);
     Route::post('/api/tasks/{task}/undo-pickup',[BusOpsController::class,'undoPickup']);
     Route::patch('/api/tasks/{task}/employee-bus-number',[BusOpsController::class,'employeeBusNumber']);
+    Route::patch('/api/tasks/{task}/employee-pickup-time',[BusOpsController::class,'employeePickupTime']);
     Route::patch('/api/tasks/{task}/actual-pickup-location',[BusOpsController::class,'actualPickupLocation']);
     Route::post('/api/tasks/{task}/cancel',[BusOpsController::class,'cancel']);
     Route::post('/api/tasks/{task}/deviations',[BusOpsController::class,'deviation']);

@@ -2,6 +2,7 @@
 namespace App\Http\Controllers;
 use App\Models\{Absence,ActivityLog,BusTask,Customer,Deviation,MailImport,OutlookConnection,User};
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 
 class BusOpsController extends Controller {
@@ -81,6 +82,16 @@ class BusOpsController extends Controller {
         $previous=$task->bus_number;
         $task->update($data);
         $this->log($r,'Busnummer rettet af medarbejder',$task,['fra'=>$previous,'til'=>$data['bus_number']]);
+        return $task->fresh(['customer','employee']);
+    }
+    public function employeePickupTime(Request $r,BusTask $task) {
+        abort_unless($r->user()->role==='employee'&&$task->employee_id===$r->user()->id,403);
+        abort_unless(in_array($task->status,['picked_up','delivered'],true),422,'Registreringstiden kan kun rettes på en hentet bus.');
+        $data=$r->validate(['picked_up_at'=>'required|date|before_or_equal:now']);
+        $previous=$task->picked_up_at?->toISOString();
+        $corrected=Carbon::parse($data['picked_up_at'])->setTimezone(config('app.timezone'));
+        $task->update(['picked_up_at'=>$corrected]);
+        $this->log($r,'Registreringstid rettet af medarbejder',$task,['fra'=>$previous,'til'=>$task->fresh()->picked_up_at?->toISOString()]);
         return $task->fresh(['customer','employee']);
     }
     public function actualPickupLocation(Request $r,BusTask $task) { abort_unless($r->user()->role==='employee'&&$task->employee_id===$r->user()->id,403); abort_unless(in_array($task->status,['assigned','picked_up']),422,'Afhentningsstedet kan kun ændres på en aktiv opgave.'); $d=$r->validate(['actual_pickup_location'=>'required|string|max:255']); $task->update($d); $this->log($r,'Faktisk afhentningssted ændret',$task,['aftalt_sted'=>$task->pickup_location,'faktisk_sted'=>$d['actual_pickup_location']]); return $task->fresh(['customer','employee']); }
