@@ -9,8 +9,55 @@ use Symfony\Component\Process\Process;
 
 class MailImportController extends Controller {
  private function admin(Request $r):void{abort_unless($r->user()->role==='admin',403);}
- public function connect(Request $r){$this->admin($r);abort_unless(config('services.microsoft.client_id'),422,'Microsoft Client ID mangler i .env.');$state=Str::random(40);$r->session()->put('outlook_state',$state);$query=http_build_query(['client_id'=>config('services.microsoft.client_id'),'response_type'=>'code','redirect_uri'=>config('services.microsoft.redirect'),'response_mode'=>'query','scope'=>'openid profile email offline_access Mail.Read User.Read','state'=>$state]);return redirect('https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?'.$query);}
- public function callback(Request $r){$this->admin($r);abort_unless(hash_equals((string)$r->session()->pull('outlook_state'),(string)$r->state),403);$token=Http::asForm()->post('https://login.microsoftonline.com/consumers/oauth2/v2.0/token',['client_id'=>config('services.microsoft.client_id'),'client_secret'=>config('services.microsoft.client_secret'),'code'=>$r->code,'redirect_uri'=>config('services.microsoft.redirect'),'grant_type'=>'authorization_code','scope'=>'openid profile email offline_access Mail.Read User.Read'])->throw()->json();$profile=Http::withToken($token['access_token'])->get('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName')->throw()->json();OutlookConnection::updateOrCreate(['user_id'=>$r->user()->id],['email'=>$profile['mail']??$profile['userPrincipalName']??null,'access_token'=>$token['access_token'],'refresh_token'=>$token['refresh_token']??null,'expires_at'=>now()->addSeconds($token['expires_in']??3600)]);return redirect('/?outlook=connected');}
+ public function connect(Request $r){
+  $this->admin($r);
+  abort_unless(config('services.microsoft.client_id'),422,'Microsoft Client ID mangler i .env.');
+  $state=Str::random(40);
+  $verifier=rtrim(strtr(base64_encode(random_bytes(64)),'+/','-_'),'=');
+  $challenge=rtrim(strtr(base64_encode(hash('sha256',$verifier,true)),'+/','-_'),'=');
+  $r->session()->put(['outlook_state'=>$state,'outlook_code_verifier'=>$verifier]);
+  $query=http_build_query([
+   'client_id'=>config('services.microsoft.client_id'),
+   'response_type'=>'code',
+   'redirect_uri'=>config('services.microsoft.redirect'),
+   'response_mode'=>'query',
+   'scope'=>'openid profile email offline_access Mail.Read User.Read',
+   'state'=>$state,
+   'code_challenge'=>$challenge,
+   'code_challenge_method'=>'S256',
+  ]);
+  return redirect('https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?'.$query);
+ }
+ public function callback(Request $r){
+  $this->admin($r);
+  $expectedState=(string)$r->session()->pull('outlook_state');
+  $verifier=(string)$r->session()->pull('outlook_code_verifier');
+  abort_unless($expectedState!==''&&hash_equals($expectedState,(string)$r->state),403);
+  if($r->filled('error')){
+   $message=Str::limit((string)$r->input('error_description','Microsoft-login blev afvist.'),300);
+   return redirect('/?outlook=error')->with('outlook_oauth_error',$message);
+  }
+  if(!$r->filled('code')||$verifier==='')return redirect('/?outlook=error')->with('outlook_oauth_error','Microsoft-login mangler en sikkerhedskode. Prøv at forbinde Outlook igen.');
+  $response=Http::asForm()->post('https://login.microsoftonline.com/consumers/oauth2/v2.0/token',[
+   'client_id'=>config('services.microsoft.client_id'),
+   'client_secret'=>config('services.microsoft.client_secret'),
+   'code'=>$r->code,
+   'code_verifier'=>$verifier,
+   'redirect_uri'=>config('services.microsoft.redirect'),
+   'grant_type'=>'authorization_code',
+   'scope'=>'openid profile email offline_access Mail.Read User.Read',
+  ]);
+  if($response->failed()){
+   $message=Str::limit((string)($response->json('error_description')??'Microsoft kunne ikke fuldføre Outlook-forbindelsen.'),300);
+   return redirect('/?outlook=error')->with('outlook_oauth_error',$message);
+  }
+  $token=$response->json();
+  $profileResponse=Http::withToken($token['access_token'])->get('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName');
+  if($profileResponse->failed())return redirect('/?outlook=error')->with('outlook_oauth_error','Outlook blev godkendt, men kontooplysningerne kunne ikke hentes. Prøv igen.');
+  $profile=$profileResponse->json();
+  OutlookConnection::updateOrCreate(['user_id'=>$r->user()->id],['email'=>$profile['mail']??$profile['userPrincipalName']??null,'access_token'=>$token['access_token'],'refresh_token'=>$token['refresh_token']??null,'expires_at'=>now()->addSeconds($token['expires_in']??3600)]);
+  return redirect('/?outlook=connected');
+ }
  private function token(OutlookConnection $c):string{if($c->expires_at?->isFuture())return $c->access_token;abort_unless($c->refresh_token,401,'Forbind Outlook igen.');$t=Http::asForm()->post('https://login.microsoftonline.com/consumers/oauth2/v2.0/token',['client_id'=>config('services.microsoft.client_id'),'client_secret'=>config('services.microsoft.client_secret'),'refresh_token'=>$c->refresh_token,'grant_type'=>'refresh_token','scope'=>'openid profile email offline_access Mail.Read User.Read'])->throw()->json();$c->update(['access_token'=>$t['access_token'],'refresh_token'=>$t['refresh_token']??$c->refresh_token,'expires_at'=>now()->addSeconds($t['expires_in']??3600)]);return $t['access_token'];}
  public function sync(Request $r){
   $this->admin($r);
