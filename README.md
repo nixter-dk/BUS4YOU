@@ -92,6 +92,8 @@ BUS4YOU_EMAIL=godkendt_afsender@eksempel.dk
 BUS4YOU_EMAIL_DOMAIN=vy.se
 ```
 
+På Railway/Linux bruger Docker-imaget automatisk `TESSERACT_PATH=/usr/bin/tesseract` og sprogene `eng+swe`, så tabeller i PNG- og JPG-bilag kan læses. Mailimport-siden viser **Billedlæsning klar**, når OCR-programmet er tilgængeligt.
+
 Kør `php artisan config:clear`, log ind som administrator, og åbn fanen **Mailimport**. BusOps gemmer aldrig Outlook-adgangskoden. Lad `BUS4YOU_EMAIL` stå tomt for at acceptere alle afsendere, der slutter præcist på `@vy.se`. Udfyld kun `BUS4YOU_EMAIL`, hvis importen senere skal begrænses til én bestemt adresse.
 
 ## Arkitektur

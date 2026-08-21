@@ -110,7 +110,7 @@ class MailImportController extends Controller {
    $temporary=tempnam(sys_get_temp_dir(),'busops-ocr-');
    file_put_contents($temporary,$binary);
    try{
-    $process=new Process([$tesseract,$temporary,'stdout','-l','eng','--psm','3']);
+    $process=new Process([$tesseract,$temporary,'stdout','-l',(string)config('services.ocr.language','eng'),'--psm','6']);
     $process->setTimeout(45);
     $process->run();
     if(!$process->isSuccessful())continue;

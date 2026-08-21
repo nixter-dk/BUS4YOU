@@ -47,7 +47,8 @@ return [
     ],
 
     'ocr' => [
-        'tesseract' => env('TESSERACT_PATH', 'C:\\Program Files\\Tesseract-OCR\\tesseract.exe'),
+        'tesseract' => env('TESSERACT_PATH', PHP_OS_FAMILY === 'Windows' ? 'C:\\Program Files\\Tesseract-OCR\\tesseract.exe' : '/usr/bin/tesseract'),
+        'language' => env('TESSERACT_LANGUAGE', PHP_OS_FAMILY === 'Windows' ? 'eng' : 'eng+swe'),
     ],
 
 ];

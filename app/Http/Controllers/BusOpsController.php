@@ -22,7 +22,7 @@ class BusOpsController extends Controller {
             'absences'=>$r->user()->role==='admin'?Absence::with('user')->latest()->get():[],
             'history'=>$r->user()->role==='admin'?ActivityLog::latest()->limit(40)->get():[],
             'mail_imports'=>$r->user()->role==='admin'?MailImport::with('items')->latest()->limit(30)->get():[],
-            'outlook'=>$r->user()->role==='admin'?['configured'=>(bool)config('services.microsoft.client_id'),'connection'=>OutlookConnection::where('user_id',$r->user()->id)->first(['email','updated_at']),'error'=>$r->session()->pull('outlook_oauth_error')]:null];
+            'outlook'=>$r->user()->role==='admin'?['configured'=>(bool)config('services.microsoft.client_id'),'connection'=>OutlookConnection::where('user_id',$r->user()->id)->first(['email','updated_at']),'ocr_ready'=>is_file((string)config('services.ocr.tesseract')),'error'=>$r->session()->pull('outlook_oauth_error')]:null];
     }
     public function storeTask(Request $r) {
         abort_unless(in_array($r->user()->role,['admin','customer']),403);

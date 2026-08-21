@@ -19,13 +19,15 @@ RUN pnpm build
 FROM php:8.4-apache
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libicu-dev libpq-dev libzip-dev tesseract-ocr tesseract-ocr-eng \
+    && apt-get install -y --no-install-recommends libicu-dev libpq-dev libzip-dev tesseract-ocr tesseract-ocr-eng tesseract-ocr-swe \
     && docker-php-ext-install bcmath intl opcache pdo_pgsql zip \
     && a2dismod -f mpm_event mpm_worker \
     && a2enmod mpm_prefork rewrite headers \
     && rm -rf /var/lib/apt/lists/*
 
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
+ENV TESSERACT_PATH=/usr/bin/tesseract
+ENV TESSERACT_LANGUAGE=eng+swe
 
 RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf \
     && sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
