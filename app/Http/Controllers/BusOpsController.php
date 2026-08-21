@@ -19,7 +19,7 @@ class BusOpsController extends Controller {
         $tasks=$q->limit(100)->get();
         if($r->user()->role==='customer') $tasks->each->makeHidden(['notes','deviations']);
         return ['user'=>$r->user(),'tasks'=>$tasks,'customers'=>$customers,'employees'=>User::where('role','employee')->get(),
-            'absences'=>$r->user()->role==='admin'?Absence::with('user')->latest()->get():[],
+            'absences'=>$r->user()->role==='admin'?Absence::with('user')->latest()->get():($r->user()->role==='employee'?Absence::where('user_id',$r->user()->id)->orderBy('starts_on')->get():[]),
             'history'=>$r->user()->role==='admin'?ActivityLog::latest()->limit(40)->get():[],
             'mail_imports'=>$r->user()->role==='admin'?MailImport::with('items')->latest()->limit(30)->get():[],
             'outlook'=>$r->user()->role==='admin'?['configured'=>(bool)config('services.microsoft.client_id'),'connection'=>OutlookConnection::where('user_id',$r->user()->id)->first(['email','updated_at']),'ocr_ready'=>is_file((string)config('services.ocr.tesseract')),'error'=>$r->session()->pull('outlook_oauth_error')]:null];

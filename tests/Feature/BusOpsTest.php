@@ -1,6 +1,6 @@
 <?php
 namespace Tests\Feature;
-use App\Models\{Customer,User};
+use App\Models\{Absence,Customer,User};
 use App\Models\BusTask;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -27,6 +27,12 @@ class BusOpsTest extends TestCase {
             ->assertCreated()->assertJson(['task_type'=>'passenger','requires_driving_license'=>true,'dropoff_location'=>'Københavns Busterminal']);
     }
     public function test_employee_cannot_create_task():void { $employee=User::factory()->create(['role'=>'employee']); $this->actingAs($employee)->postJson('/api/tasks',[])->assertForbidden(); }
+    public function test_employee_dashboard_contains_only_their_own_absence_days():void {
+        $employee=User::factory()->create(['role'=>'employee']);$other=User::factory()->create(['role'=>'employee']);
+        Absence::create(['user_id'=>$employee->id,'starts_on'=>'2026-08-24','ends_on'=>'2026-08-25','reason'=>'Fridag']);
+        Absence::create(['user_id'=>$other->id,'starts_on'=>'2026-08-24','ends_on'=>'2026-08-24','reason'=>'Ferie']);
+        $this->actingAs($employee)->getJson('/api/dashboard')->assertOk()->assertJsonCount(1,'absences')->assertJsonPath('absences.0.reason','Fridag');
+    }
     public function test_customer_can_create_task_for_own_company():void {
         $user=User::factory()->create(['role'=>'customer','email'=>'kunde@bus4you.dk']); $company=Customer::create(['name'=>'Bus4You','email'=>'kunde@bus4you.dk']);
         $this->actingAs($user)->postJson('/api/tasks',['customer_id'=>$company->id,'bus_number'=>'BY-20','pickup_location'=>'Busterminal','scheduled_at'=>now()->addHour()->toISOString()])
