@@ -67,9 +67,8 @@ class MailImportController extends Controller {
   $trusted=0;$recognized=0;$created=0;$items=0;$duplicates=0;$images=0;
   foreach($messages as $m){
    $sender=mb_strtolower($m['from']['emailAddress']['address']??'');
-   $allowed=mb_strtolower((string)config('services.bus4you_mail.sender'));
    $domain=ltrim(mb_strtolower((string)config('services.bus4you_mail.domain')),'@');
-   if($allowed?$sender!==$allowed:!str_ends_with($sender,'@'.$domain))continue;
+   if(!str_ends_with($sender,'@'.$domain))continue;
    $trusted++;
    if(MailImport::where('graph_message_id',$m['id'])->exists()){$duplicates++;continue;}
    $body=$m['body']['content']??'';
@@ -124,18 +123,32 @@ class MailImportController extends Controller {
  public function preview(Request $r){$this->admin($r);$d=$r->validate(['content'=>'required|string','received_at'=>'nullable|date']);$import=MailImport::create(['graph_message_id'=>'manual-'.Str::uuid(),'subject'=>'Manuel importkladde','received_at'=>$d['received_at']??now(),'source_excerpt'=>Str::limit(strip_tags($d['content']),1000)]);foreach($this->parse($d['content'],Carbon::parse($d['received_at']??now())) as $row)$import->items()->create($row);if(!$import->items()->exists())$import->update(['status'=>'needs_review']);return $import->load('items');}
  private function parse(string $html,Carbon $received):array{
   $text=html_entity_decode($html,ENT_QUOTES|ENT_HTML5,'UTF-8');
+  $text=preg_replace('/<table\b[^>]*>/i',"\n__BUSOPS_TABLE__\n",$text);
   $text=preg_replace('/<\/(td|th)>/i',"\t",$text);
   $text=preg_replace('/<\/(tr|p|div|h[1-6])>/i',"\n",$text);
   $lines=preg_split('/\R+/',strip_tags($text));
-  $date=$received->copy()->addDay()->startOfDay();$rows=[];
-  foreach($lines as $line){
+  $date=$received->copy()->setTimezone('Europe/Copenhagen')->addDay()->startOfDay();$rows=[];$tableHasRows=false;$explicitDateSinceTable=false;
+  for($i=0;$i<count($lines);$i++){
+   $line=$lines[$i];
    $line=trim(preg_replace('/ +/',' ',str_replace("\t ","\t",$line)));
+   if($line==='__BUSOPS_TABLE__'){
+    if($tableHasRows&&!$explicitDateSinceTable)$date->addDay();
+    $tableHasRows=false;$explicitDateSinceTable=false;continue;
+   }
    if(preg_match('/^[[:alpha:]À-ÿ]{3,12}\s+(\d{1,2})\/(\d{1,2})/u',$line,$m)){
     $candidate=Carbon::create($received->year,(int)$m[2],(int)$m[1],0,0,0,'Europe/Copenhagen');
-    if($received->month===12&&(int)$m[2]===1)$candidate->addYear();$date=$candidate;continue;
+    if($received->month===12&&(int)$m[2]===1)$candidate->addYear();$date=$candidate;$explicitDateSinceTable=true;continue;
    }
-   if(preg_match('/^(.+?)(?:\t+|\s{2,}|\s+)(\d{4,6})(?:\t+|\s{2,}|\s+)(\d{1,2}:\d{2})/u',$line,$m)){
+   if(preg_match('/^(.+?)\s*\|\s*(\d{4,6})\s*\|\s*(\d{1,2}:\d{2})/u',$line,$m)||preg_match('/^(.+?)(?:\t+|\s{2,}|\s+)(\d{4,6})(?:\t+|\s{2,}|\s+)(\d{1,2}:\d{2})/u',$line,$m)){
     $rows[]=['service_date'=>$date->toDateString(),'loop'=>trim($m[1]),'bus_number'=>$m[2],'arrival_time'=>$m[3].':00','pickup_location'=>'Busterminal','notes'=>trim($m[1]),'confidence'=>100];
+    $tableHasRows=true;continue;
+   }
+   if($line!==''&&!preg_match('/^(omlopp|buss|ankomst\s+kph|[-|\s]+)$/iu',$line)&&isset($lines[$i+1],$lines[$i+2])){
+    $bus=trim($lines[$i+1]);$time=trim($lines[$i+2]);
+    if(preg_match('/^\d{4,6}$/',$bus)&&preg_match('/^\d{1,2}:\d{2}$/',$time)){
+     $rows[]=['service_date'=>$date->toDateString(),'loop'=>$line,'bus_number'=>$bus,'arrival_time'=>$time.':00','pickup_location'=>'Busterminal','notes'=>$line,'confidence'=>100];
+     $tableHasRows=true;$i+=2;
+    }
    }
   }
   return $rows;

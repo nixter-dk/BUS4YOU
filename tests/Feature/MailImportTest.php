@@ -22,6 +22,20 @@ class MailImportTest extends TestCase {
   $this->assertDatabaseHas('mail_import_items',['service_date'=>'2026-08-01 00:00:00','bus_number'=>'75195','arrival_time'=>'07:00:00']);
   $this->assertDatabaseHas('mail_import_items',['service_date'=>'2026-08-02 00:00:00','bus_number'=>'75191','arrival_time'=>'11:20:00']);
  }
+ public function test_three_undated_tables_in_a_friday_mail_are_assigned_to_saturday_sunday_and_monday():void{
+  $admin=User::factory()->create(['role'=>'admin']);
+  $content='<table><tr><th>Omlopp</th><th>Buss</th><th>Ankomst Kph</th></tr><tr><td>G4</td><td>75160</td><td>07:00</td></tr></table><table><tr><th>Omlopp</th><th>Buss</th><th>Ankomst Kph</th></tr><tr><td>G3</td><td>75154</td><td>07:00</td></tr></table><table><tr><th>Omlopp</th><th>Buss</th><th>Ankomst Kph</th></tr><tr><td>G7</td><td>75192</td><td>07:00</td></tr></table>';
+  $this->actingAs($admin)->postJson('/api/mail-import/preview',['content'=>$content,'received_at'=>'2026-08-21 15:58:00'])->assertCreated()->assertJsonCount(3,'items');
+  $this->assertDatabaseHas('mail_import_items',['service_date'=>'2026-08-22 00:00:00','bus_number'=>'75160']);
+  $this->assertDatabaseHas('mail_import_items',['service_date'=>'2026-08-23 00:00:00','bus_number'=>'75154']);
+  $this->assertDatabaseHas('mail_import_items',['service_date'=>'2026-08-24 00:00:00','bus_number'=>'75192']);
+ }
+ public function test_vertical_mail_cells_are_parsed_for_the_next_day():void{
+  $admin=User::factory()->create(['role'=>'admin']);
+  $content="Omlopp\nBuss\nAnkomst Kph\nG4\n75160\n07:00\nG3\n75154\n11:20";
+  $this->actingAs($admin)->postJson('/api/mail-import/preview',['content'=>$content,'received_at'=>'2026-08-20 14:48:00'])->assertCreated()->assertJsonCount(2,'items');
+  $this->assertDatabaseHas('mail_import_items',['service_date'=>'2026-08-21 00:00:00','bus_number'=>'75160','arrival_time'=>'07:00:00']);
+ }
  public function test_outlook_connect_uses_pkce():void{
   config(['services.microsoft.client_id'=>'test-client','services.microsoft.redirect'=>'https://example.test/admin/outlook/callback']);
   $admin=User::factory()->create(['role'=>'admin']);
