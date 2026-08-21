@@ -28,15 +28,16 @@ class BusOpsTest extends TestCase {
     }
     public function test_employee_cannot_create_task():void { $employee=User::factory()->create(['role'=>'employee']); $this->actingAs($employee)->postJson('/api/tasks',[])->assertForbidden(); }
     public function test_employee_dashboard_contains_only_their_own_absence_days():void {
-        $employee=User::factory()->create(['role'=>'employee']);$other=User::factory()->create(['role'=>'employee']);
-        Absence::create(['user_id'=>$employee->id,'type'=>'day_off','starts_on'=>'2026-08-24','ends_on'=>'2026-08-25','reason'=>'Planlagt fri']);
-        Absence::create(['user_id'=>$other->id,'type'=>'absence','starts_on'=>'2026-08-24','ends_on'=>'2026-08-24','reason'=>'Ferie']);
-        $this->actingAs($employee)->getJson('/api/dashboard')->assertOk()->assertJsonCount(1,'absences')->assertJsonPath('absences.0.type','day_off');
+        $fisnik=User::factory()->create(['name'=>'Fisnik','role'=>'employee']);$agron=User::factory()->create(['name'=>'Agron','role'=>'employee']);
+        Absence::create(['user_id'=>$fisnik->id,'type'=>'day_off','starts_on'=>'2026-08-22','ends_on'=>'2026-08-22','reason'=>'Planlagt fri']);
+        Absence::create(['user_id'=>$agron->id,'type'=>'day_off','starts_on'=>'2026-08-23','ends_on'=>'2026-08-23','reason'=>'Planlagt fri']);
+        $this->actingAs($fisnik)->getJson('/api/dashboard')->assertOk()->assertJsonCount(1,'absences')->assertJsonPath('absences.0.user_id',$fisnik->id)->assertJsonPath('absences.0.type','day_off')->assertJsonPath('absences.0.starts_on','2026-08-22')->assertJsonMissing(['starts_on'=>'2026-08-23']);
+        $this->actingAs($agron)->getJson('/api/dashboard')->assertOk()->assertJsonCount(1,'absences')->assertJsonPath('absences.0.user_id',$agron->id)->assertJsonPath('absences.0.type','day_off')->assertJsonPath('absences.0.starts_on','2026-08-23')->assertJsonMissing(['starts_on'=>'2026-08-22']);
     }
     public function test_admin_can_register_a_specific_employee_day_off():void {
         $admin=User::factory()->create(['role'=>'admin']);$employee=User::factory()->create(['role'=>'employee']);
         $this->actingAs($admin)->postJson('/api/absences',['user_id'=>$employee->id,'type'=>'day_off','starts_on'=>'2026-08-26','ends_on'=>'2026-08-26','reason'=>'Planlagt fri'])->assertCreated()->assertJson(['type'=>'day_off','reason'=>'Planlagt fri']);
-        $this->assertDatabaseHas('absences',['user_id'=>$employee->id,'type'=>'day_off','starts_on'=>'2026-08-26 00:00:00']);
+        $this->assertDatabaseHas('absences',['user_id'=>$employee->id,'type'=>'day_off','starts_on'=>'2026-08-26']);
     }
     public function test_customer_can_create_task_for_own_company():void {
         $user=User::factory()->create(['role'=>'customer','email'=>'kunde@bus4you.dk']); $company=Customer::create(['name'=>'Bus4You','email'=>'kunde@bus4you.dk']);
